@@ -1,0 +1,28 @@
+{
+    "name": "hybridtm",
+    "version": "1.0.0",
+    "description": "HybridTM is a Translation Memory (TM) engine that supports ngrams-based and vector-based matching.",
+    "main": "dist/index.js",
+    "types": "dist/index.d.ts",
+    "files": [
+        "/dist"
+    ],
+    "scripts": {
+        "build": "tsc"
+    },
+    "author": {
+        "name": "Rodolfo M. Raya",
+        "url": "https://maxprograms.com",
+        "email": "rmraya@maxprograms.com"
+    },
+    "keywords": [],
+    "license": "EPL-1.0",
+    "dependencies": {
+        "typesxml": "^1.7.0",
+        "typesbcp47": "^1.5.5"
+    },
+    "devDependencies": {
+        "typescript": "^5.8.3",
+        "@types/node": "^20.0.0"
+    }
+}

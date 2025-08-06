@@ -12,3 +12,5 @@
 
 export { Constants } from "./constants";
 export { HybridTM } from "./hybridtm";
+export { Match } from "./match";
+export { Ngrams } from "./ngrams";

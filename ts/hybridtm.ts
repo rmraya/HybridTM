@@ -14,6 +14,7 @@ import { existsSync } from "fs";
 import { Database } from "sqlite3";
 import { XMLElement } from "typesxml";
 import { Match } from "./match";
+import { XLIFFReader } from "./xliffreader";
 
 export class HybridTM {
 
@@ -31,7 +32,7 @@ export class HybridTM {
                 throw err;
             }
         });
-        
+
         if (!dbExists) {
             this.initializeDatabase();
         }
@@ -86,14 +87,9 @@ export class HybridTM {
         });
     }
 
-    importTMX(filePath: string): void {
-        // Implementation for importing TMX files
-        console.log(`Importing TMX file from: ${filePath}`);
-    }
-
     importXLIFF(filePath: string): void {
-        // Implementation for importing XLIFF files
-        console.log(`Importing XLIFF file from: ${filePath}`);
+        let reader: XLIFFReader = new XLIFFReader(filePath, this);
+        reader.parse();
     }
 
     concordanceSearch(term: string, language: string): Array<XMLElement> {
@@ -114,23 +110,7 @@ export class HybridTM {
         return [];
     }
 
-    storeXliffSegment(entry: XMLElement, srcLang: string, tgtLang: string): void {
-        // Implementation for storing XLIFF segments
-        console.log(`Storing XLIFF segment for source language: ${srcLang} and target language: ${tgtLang}`);
-    }
-
-    storeXliffUnit(entry: XMLElement, srcLang: string, tgtLang: string): void {
-        // Implementation for storing XLIFF units
-        console.log(`Storing XLIFF unit for source language: ${srcLang} and target language: ${tgtLang}`);
-    }
-
-    storeTmxTu(entry: XMLElement): void {
-        // Implementation for storing TMX translation units
-        console.log(`Storing TMX translation unit for entry: ${entry}`);
-    }
-
-    storeTmxTuv(entry: XMLElement, srcLang: string, tuId: string): void {
-        // Implementation for storing TMX translation unit variants
-        console.log(`Storing TMX translation unit variant for source language: ${srcLang} from tuId: ${tuId}`);
+    storeLangEntry(fileId: string, original: string , unitId: string, lang: string , pureText: string, ngrams: string[], element: XMLElement): void{
+        console.log(`Storing language entry for fileId: ${fileId}, original: ${original}, unitId: ${unitId}, lang: ${lang}, pureText: ${pureText}, ngrams: ${ngrams}, element: ${element}`);
     }
 }

@@ -10,10 +10,20 @@
  *     Maxprograms - initial API and implementation
  *******************************************************************************/
 
-export { Constants } from "./constants";
-export { HybridTM } from "./hybridtm";
-export { Match } from "./match";
-export { Ngrams } from "./ngrams";
-export { XLIFFReader } from "./xliffreader";
-export { XLIFFHandler } from "./xliffhandler";
-export { Utils } from "./utils";
+import { ContentHandler, SAXParser } from "typesxml/dist";
+import { HybridTM } from "./hybridtm";
+import { XLIFFHandler } from "./xliffhandler";
+
+export class XLIFFReader {
+
+    parser: SAXParser;
+    constructor(private filePath: string, tm: HybridTM) {
+        this.parser = new SAXParser();
+        let handler: ContentHandler = new XLIFFHandler(tm);
+        this.parser.setContentHandler(handler);
+    }
+
+    parse(): void {
+        this.parser.parseFile(this.filePath);
+    }
+}

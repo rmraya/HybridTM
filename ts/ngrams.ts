@@ -32,5 +32,3 @@ export class Ngrams {
     }
 }
 
-console.log(Ngrams.generateNGrams("This is a test sentence for generating n-grams.")); // Example usage
-

@@ -52,20 +52,20 @@ export class XLIFFHandler implements ContentHandler {
     }
 
     startElement(name: string, atts: Array<XMLAttribute>): void {
-        let element: XMLElement = new XMLElement(name);
-        atts.forEach((att) => {
+        const element: XMLElement = new XMLElement(name);
+        atts.forEach((att: XMLAttribute) => {
             element.setAttribute(att);
         });
         if ("xliff" === name) {
-            let version: XMLAttribute | undefined = element.getAttribute("version");
+            const version: XMLAttribute | undefined = element.getAttribute("version");
             if (!version || !version.getValue().startsWith("2.")) {
                 throw new Error("Unsupported XLIFF version");
             }
-            let srcLang: XMLAttribute | undefined = element.getAttribute("srcLang");
+            const srcLang: XMLAttribute | undefined = element.getAttribute("srcLang");
             if (!srcLang) {
                 throw new Error("Missing @srcLang attribute in <xliff>");
             }
-            let trgLang: XMLAttribute | undefined = element.getAttribute("trgLang");
+            const trgLang: XMLAttribute | undefined = element.getAttribute("trgLang");
             if (!trgLang) {
                 throw new Error("Missing @trgLang attribute in <xliff>");
             }
@@ -73,9 +73,9 @@ export class XLIFFHandler implements ContentHandler {
             this.tgtLang = trgLang.getValue();
         }
         if ("file" === name) {
-            let original: XMLAttribute | undefined = element.getAttribute("original");
+            const original: XMLAttribute | undefined = element.getAttribute("original");
             this.original = original ? original.getValue() : '';
-            let id: XMLAttribute | undefined = element.getAttribute("id");
+            const id: XMLAttribute | undefined = element.getAttribute("id");
             if (!id) {
                 throw new Error("Missing @id attribute in <file>");
             }
@@ -89,7 +89,7 @@ export class XLIFFHandler implements ContentHandler {
 
     endElement(name: string): void {
         if ("unit" === name) {
-            let unit = this.stack[this.stack.length - 1];
+            const unit: XMLElement = this.stack[this.stack.length - 1];
             this.processUnit(unit);
         }
         this.stack.pop();
@@ -104,7 +104,7 @@ export class XLIFFHandler implements ContentHandler {
             this.currentCData.setValue(this.currentCData.getValue() + ch);
             return;
         }
-        let textNode: TextNode = new TextNode(ch);
+        const textNode: TextNode = new TextNode(ch);
         // ignore characters outside of elements
         if (this.stack.length > 0) {
             this.stack[this.stack.length - 1].addTextNode(textNode);
@@ -112,7 +112,7 @@ export class XLIFFHandler implements ContentHandler {
     }
 
     ignorableWhitespace(ch: string): void {
-        let textNode: TextNode = new TextNode(ch);
+        const textNode: TextNode = new TextNode(ch);
         // ignore characters outside of elements
         if (this.stack.length > 0) {
             this.stack[this.stack.length - 1].addTextNode(textNode);
@@ -148,19 +148,19 @@ export class XLIFFHandler implements ContentHandler {
     }
 
     processUnit(unit: XMLElement): void {
-        let id: XMLAttribute | undefined = unit.getAttribute("id");
+        const id: XMLAttribute | undefined = unit.getAttribute("id");
         if (!id) {
             throw new Error("Missing @id attribute in <unit>");
         }
-        let combinedSource: XMLElement = new XMLElement("source");
-        let combinedTarget: XMLElement = new XMLElement("target");
-        let children: XMLElement[] = unit.getChildren();
-        children.forEach((child) => {
+        const combinedSource: XMLElement = new XMLElement("source");
+        const combinedTarget: XMLElement = new XMLElement("target");
+        const children: XMLElement[] = unit.getChildren();
+        children.forEach((child: XMLElement) => {
             if ("segment" === child.getName() || "ignorable" === child.getName()) {
-                let source: XMLElement | undefined = child.getChild("source");
+                const source: XMLElement | undefined = child.getChild("source");
                 if (source) {
-                    let content: XMLNode[] = source.getContent();
-                    content.forEach((node) => {
+                    const content: XMLNode[] = source.getContent();
+                    content.forEach((node: XMLNode) => {
                         if (node instanceof TextNode) {
                             combinedSource.addTextNode(node);
                         }
@@ -169,10 +169,10 @@ export class XLIFFHandler implements ContentHandler {
                         }
                     });
                 }
-                let target: XMLElement | undefined = child.getChild("target");
+                const target: XMLElement | undefined = child.getChild("target");
                 if (target) {
-                    let content: XMLNode[] = target.getContent();
-                    content.forEach((node) => {
+                    const content: XMLNode[] = target.getContent();
+                    content.forEach((node: XMLNode) => {
                         if (node instanceof TextNode) {
                             combinedTarget.addTextNode(node);
                         }
@@ -183,9 +183,9 @@ export class XLIFFHandler implements ContentHandler {
                 }
             }
         });
-        let pureSource: string = Utils.getPureText(combinedSource);
+        const pureSource: string = Utils.getPureText(combinedSource);
         this.tm.storeLangEntry(this.fileId, this.original, id.getValue(), this.srcLang, pureSource, combinedSource);
-        let pureTarget: string = Utils.getPureText(combinedTarget);
+        const pureTarget: string = Utils.getPureText(combinedTarget);
         this.tm.storeLangEntry(this.fileId, this.original, id.getValue(), this.tgtLang, pureTarget, combinedTarget);
     }
 }

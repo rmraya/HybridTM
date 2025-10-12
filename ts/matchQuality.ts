@@ -21,17 +21,17 @@ export class MatchQuality {
      * @returns The longest common substring
      */
     private static lcs(x: string, y: string): string {
-        const m = x.length;
-        const n = y.length;
-        let max = 0;
-        let mx = 0;
+        const m: number = x.length;
+        const n: number = y.length;
+        let max: number = 0;
+        let mx: number = 0;
 
         // opt[i][j] = length of LCS of x[i..M] and y[j..N]
         const opt: number[][] = Array(m + 1).fill(null).map(() => Array(n + 1).fill(0));
 
         // fill the matrix
-        for (let i = 1; i <= m; i++) {
-            for (let j = 1; j <= n; j++) {
+        for (let i: number = 1; i <= m; i++) {
+            for (let j: number = 1; j <= n; j++) {
                 if (x.charAt(i - 1) === y.charAt(j - 1)) {
                     opt[i][j] = opt[i - 1][j - 1] + 1;
                     if (opt[i][j] > max) {
@@ -46,7 +46,7 @@ export class MatchQuality {
         }
 
         // recover the LCS
-        let result = '';
+        let result: string = '';
         while (max > 0) {
             result = x.charAt(mx - 1) + result;
             max--;
@@ -62,10 +62,10 @@ export class MatchQuality {
      * @returns Similarity percentage (0-100)
      */
     public static similarity(x: string, y: string): number {
-        let result = 0;
+        let result: number = 0;
         x = x.trim();
         y = y.trim();
-        const longest = Math.max(x.length, y.length);
+        const longest: number = Math.max(x.length, y.length);
         
         if (longest === 0) {
             return 0;
@@ -82,9 +82,9 @@ export class MatchQuality {
         }
 
         // a is the longest string
-        let count = -1;
+        let count: number = -1;
         let idx: number;
-        let lcs = MatchQuality.lcs(a, b);
+        let lcs: string = MatchQuality.lcs(a, b);
         
         while (lcs.trim().length > 0 && lcs.length > longest * MatchQuality.PENALTY / 100) {
             count++;

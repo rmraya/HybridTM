@@ -19,7 +19,7 @@ export class XLIFFReader {
     parser: SAXParser;
     constructor(private filePath: string, tm: HybridTM) {
         this.parser = new SAXParser();
-        let handler: ContentHandler = new XLIFFHandler(tm);
+        const handler: ContentHandler = new XLIFFHandler(tm);
         this.parser.setContentHandler(handler);
     }
 

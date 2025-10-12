@@ -17,12 +17,12 @@ export class Utils {
     static getPureText(element: XMLElement): string {
         let text: string = '';
         let content: XMLNode[] = element.getContent();
-        content.forEach((node) => {
+        content.forEach((node: XMLNode) => {
             if (node instanceof TextNode) {
                 text += node.getValue();
             }
             if (node instanceof XMLElement) {
-                let child: XMLElement = node;
+                const child: XMLElement = node;
                 if ("pc" === child.getName() || "mrk" === child.getName()) {
                     text += this.getPureText(child);
                 }
@@ -33,13 +33,13 @@ export class Utils {
     }
 
     static buildXMLElement(str: string): XMLElement {
-        let contentHandler: ContentHandler = new DOMBuilder();
-        let xmlParser = new SAXParser();
+        const contentHandler: ContentHandler = new DOMBuilder();
+        const xmlParser: SAXParser = new SAXParser();
         xmlParser.setContentHandler(contentHandler);
         xmlParser.parseString(str);
-        let newDoc: XMLDocument | undefined = (contentHandler as DOMBuilder).getDocument();
+        const newDoc: XMLDocument | undefined = (contentHandler as DOMBuilder).getDocument();
         if (newDoc) {
-            let root: XMLElement | undefined = newDoc.getRoot();
+            const root: XMLElement | undefined = newDoc.getRoot();
             if (root) {
                 return root;
             }

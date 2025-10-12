@@ -67,8 +67,8 @@ npm install
 ```typescript
 import { HybridTM } from 'hybridtm';
 
-// Create a translation memory with your choice of model
-const tm = new HybridTM('./my-tm.lancedb', HybridTM.QUALITY_MODEL);
+// Create and initialize a translation memory with your choice of model
+const tm = await HybridTM.getInstance('./my-tm.lancedb', HybridTM.QUALITY_MODEL);
 
 // Import XLIFF files to populate the TM
 tm.importXLIFF('./translations/project1.xlf');
@@ -107,16 +107,16 @@ await tm.close();
 // Choose the model that fits your needs:
 
 // For real-time CAT tools (fastest)
-const speedTM = new HybridTM('./tm.lancedb', HybridTM.SPEED_MODEL);
+const speedTM = await HybridTM.getInstance('./tm.lancedb', HybridTM.SPEED_MODEL);
 
 // For maximum accuracy (default, recommended)
-const qualityTM = new HybridTM('./tm.lancedb', HybridTM.QUALITY_MODEL);
+const qualityTM = await HybridTM.getInstance('./tm.lancedb', HybridTM.QUALITY_MODEL);
 
 // For resource-constrained environments
-const resourceTM = new HybridTM('./tm.lancedb', HybridTM.RESOURCE_MODEL);
+const resourceTM = await HybridTM.getInstance('./tm.lancedb', HybridTM.RESOURCE_MODEL);
 
 // Use any alternative model by ID
-const customTM = new HybridTM('./tm.lancedb', 'Xenova/bge-m3');
+const customTM = await HybridTM.getInstance('./tm.lancedb', 'Xenova/bge-m3');
 ```
 
 ### Model Constants
@@ -133,11 +133,11 @@ HybridTM.RESOURCE_MODEL // 'Xenova/multilingual-e5-small' - Minimal hardware
 ```typescript
 try {
     // If model doesn't exist or can't be loaded, initialization will fail
-    const tm = new HybridTM('./db.lancedb', 'Xenova/nonexistent-model');
+    const tm = await HybridTM.getInstance('./db.lancedb', 'Xenova/nonexistent-model');
 } catch (error) {
     console.error('Model initialization failed:', error.message);
     // Use a working model instead
-    const fallbackTM = new HybridTM('./db.lancedb', HybridTM.QUALITY_MODEL);
+    const fallbackTM = await HybridTM.getInstance('./db.lancedb', HybridTM.QUALITY_MODEL);
 }
 ```
 

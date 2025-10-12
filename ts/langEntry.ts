@@ -10,12 +10,14 @@
  *     Maxprograms - initial API and implementation
  *******************************************************************************/
 
-export { Constants } from "./constants";
-export { HybridTM } from "./hybridtm";
-export { LangEntry } from "./langEntry";
-export { Match } from "./match";
-export { MatchQuality } from "./matchQuality";
-export { Utils } from "./utils";
-export { XLIFFHandler } from "./xliffhandler";
-export { XLIFFReader } from "./xliffreader";
-
+export interface LangEntry {
+    id: string; // String ID for better LanceDB key compatibility
+    language: string;
+    pureText: string;
+    element: string;
+    fileId: string;
+    original: string;
+    unitId: string;
+    vector: number[]; // Vector embeddings (384/512/768-dimensional based on model)
+    [key: string]: any; // Index signature for LanceDB compatibility
+}

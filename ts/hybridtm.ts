@@ -12,24 +12,13 @@
 
 import * as lancedb from "@lancedb/lancedb";
 import { FeatureExtractionPipeline, pipeline } from "@xenova/transformers";
+import { Field, FixedSizeList, Float32, Schema, Utf8 } from "apache-arrow";
 import { XMLElement } from "typesxml";
+import { LangEntry } from "./langEntry";
 import { Match } from "./match";
+import { MatchQuality } from "./matchQuality";
 import { Utils } from "./utils";
 import { XLIFFReader } from "./xliffreader";
-import { MatchQuality } from "./matchQuality";
-import { Schema, Field, Utf8, Float32, FixedSizeList } from "apache-arrow";
-
-interface LangEntry {
-    id: string; // String ID for better LanceDB key compatibility
-    language: string;
-    pureText: string;
-    element: string;
-    fileId: string;
-    original: string;
-    unitId: string;
-    vector: number[]; // Vector embeddings (384/512/768-dimensional based on model)
-    [key: string]: any; // Index signature for LanceDB compatibility
-}
 
 export class HybridTM {
 
@@ -103,7 +92,7 @@ export class HybridTM {
             if (!tableNames.includes('langEntry')) {
                 // Detect model dimensions first
                 const dimensions = await this.detectModelDimensions();
-                
+
                 // Create Arrow schema for the langEntry table
                 const schema = new Schema([
                     Field.new('id', new Utf8(), false),           // String ID for LanceDB compatibility

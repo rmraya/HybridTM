@@ -18,14 +18,12 @@ export class Match {
     target: XMLElement;
     origin: string;
     quality: number;
-    metadata: any;
 
-    constructor(source: XMLElement, target: XMLElement, origin: string, quality:number, metadata: any) {
+    constructor(source: XMLElement, target: XMLElement, origin: string, quality:number) {
         this.source = source;
         this.target = target;
         this.origin = origin;
         this.quality = quality;
-        this.metadata = metadata;
     }
 
     toJSON(): any {
@@ -33,8 +31,7 @@ export class Match {
             source: this.source.toString(),
             target: this.target.toString(),
             origin: this.origin,
-            quality: this.quality,
-            metadata: this.metadata
+            quality: this.quality
         }
     }
 

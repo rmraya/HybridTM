@@ -13,7 +13,7 @@
 export { Constants } from "./constants";
 export { HybridTM } from "./hybridtm";
 export { Match } from "./match";
-export { Ngrams } from "./ngrams";
-export { XLIFFReader } from "./xliffreader";
-export { XLIFFHandler } from "./xliffhandler";
+export { MatchQuality } from "./matchQuality";
 export { Utils } from "./utils";
+export { XLIFFHandler } from "./xliffhandler";
+export { XLIFFReader } from "./xliffreader";

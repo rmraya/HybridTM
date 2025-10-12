@@ -15,7 +15,8 @@
                 "node_modules/*"
             ]
         },
-        "strict": true
+        "strict": true,
+        "skipLibCheck": true
     },
     "include": [
         "ts/**/*"

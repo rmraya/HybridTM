@@ -12,7 +12,6 @@
 
 import { Catalog, CData, ContentHandler, TextNode, XMLAttribute, XMLElement, XMLNode } from "typesxml/dist";
 import { HybridTM } from "./hybridtm";
-import { Ngrams } from "./ngrams";
 import { Utils } from "./utils";
 
 export class XLIFFHandler implements ContentHandler {
@@ -185,10 +184,8 @@ export class XLIFFHandler implements ContentHandler {
             }
         });
         let pureSource: string = Utils.getPureText(combinedSource);
-        let sourceNgrams: string[] = Ngrams.generateNGrams(pureSource);
-        this.tm.storeLangEntry(this.fileId, this.original, id.getValue(), this.srcLang, pureSource, sourceNgrams, combinedSource);
+        this.tm.storeLangEntry(this.fileId, this.original, id.getValue(), this.srcLang, pureSource, combinedSource);
         let pureTarget: string = Utils.getPureText(combinedTarget);
-        let targetNgrams: string[] = Ngrams.generateNGrams(pureTarget);
-        this.tm.storeLangEntry(this.fileId, this.original, id.getValue(), this.tgtLang, pureTarget, targetNgrams, combinedTarget);
+        this.tm.storeLangEntry(this.fileId, this.original, id.getValue(), this.tgtLang, pureTarget, combinedTarget);
     }
 }

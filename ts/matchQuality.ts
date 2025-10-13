@@ -14,12 +14,6 @@ export class MatchQuality {
     
     private static readonly PENALTY = 2;
 
-    /**
-     * Finds the longest common substring between two strings using dynamic programming
-     * @param x First string
-     * @param y Second string
-     * @returns The longest common substring
-     */
     private static lcs(x: string, y: string): string {
         const m: number = x.length;
         const n: number = y.length;
@@ -55,12 +49,6 @@ export class MatchQuality {
         return result;
     }
 
-    /**
-     * Calculates the similarity between two strings using LCS algorithm with penalties
-     * @param x First string to compare
-     * @param y Second string to compare
-     * @returns Similarity percentage (0-100)
-     */
     public static similarity(x: string, y: string): number {
         let result: number = 0;
         x = x.trim();

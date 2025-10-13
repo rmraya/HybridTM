@@ -10,13 +10,12 @@
  *     Maxprograms - initial API and implementation
  *******************************************************************************/
 
+import { createWriteStream, WriteStream } from 'fs';
 import { Catalog, CData, ContentHandler, TextNode, XMLAttribute, XMLElement, XMLNode } from "typesxml/dist";
-import { HybridTM } from "./hybridtm";
 import { Utils } from "./utils";
 
 export class XLIFFHandler implements ContentHandler {
 
-    tm: HybridTM;
     inCdData: boolean = false;
     currentCData: CData = new CData('');
     stack: Array<XMLElement> = [];
@@ -25,9 +24,20 @@ export class XLIFFHandler implements ContentHandler {
     tgtLang: string = '';
     original: string = '';
     fileId: string = '';
+    private writeStream: WriteStream;
+    private completionCallback: (() => void) | null = null;
+    private entryCount: number = 0;
 
-    constructor(tm: HybridTM) {
-        this.tm = tm;
+    constructor(tempFilePath: string) {
+        this.writeStream = createWriteStream(tempFilePath, { encoding: 'utf8' });
+    }
+
+    onComplete(callback: () => void): void {
+        this.completionCallback = callback;
+    }
+
+    getEntryCount(): number {
+        return this.entryCount;
     }
 
     initialize(): void {
@@ -44,7 +54,13 @@ export class XLIFFHandler implements ContentHandler {
     }
 
     endDocument(): void {
-        // do nothing
+        // Close the write stream when document ends
+        this.writeStream.end(() => {
+            // Call completion callback after stream is fully closed
+            if (this.completionCallback) {
+                this.completionCallback();
+            }
+        });
     }
 
     xmlDeclaration(version: string, encoding: string, standalone: string | undefined): void {
@@ -184,8 +200,33 @@ export class XLIFFHandler implements ContentHandler {
             }
         });
         const pureSource: string = Utils.getPureText(combinedSource);
-        this.tm.storeLangEntry(this.fileId, this.original, id.getValue(), this.srcLang, pureSource, combinedSource);
         const pureTarget: string = Utils.getPureText(combinedTarget);
-        this.tm.storeLangEntry(this.fileId, this.original, id.getValue(), this.tgtLang, pureTarget, combinedTarget);
+        
+        // Write source entry as JSONL
+        const sourceEntry = {
+            language: this.srcLang,
+            fileId: this.fileId,
+            original: this.original,
+            unitId: id.getValue(),
+            pureText: pureSource,
+            element: combinedSource.toString()
+        };
+        this.writeStream.write(JSON.stringify(sourceEntry) + '\n');
+        this.entryCount++;
+        
+        if (pureTarget === '') {
+            return; // No target to write
+        }
+        // Write target entry as JSONL
+        const targetEntry = {
+            language: this.tgtLang,
+            fileId: this.fileId,
+            original: this.original,
+            unitId: id.getValue(),
+            pureText: pureTarget,
+            element: combinedTarget.toString()
+        };
+        this.writeStream.write(JSON.stringify(targetEntry) + '\n');
+        this.entryCount++;
     }
 }

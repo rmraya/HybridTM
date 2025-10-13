@@ -10,11 +10,15 @@
  *     Maxprograms - initial API and implementation
  *******************************************************************************/
 
+export { BatchImporter } from "./batchimporter";
 export { Constants } from "./constants";
 export { HybridTM } from "./hybridtm";
 export { LangEntry } from "./langEntry";
 export { Match } from "./match";
 export { MatchQuality } from "./matchQuality";
+export { PendingEntry } from "./pendingEntry";
+export { TMXHandler } from "./tmxhandler";
+export { TMXReader } from "./tmxreader";
 export { Utils } from "./utils";
 export { XLIFFHandler } from "./xliffhandler";
 export { XLIFFReader } from "./xliffreader";

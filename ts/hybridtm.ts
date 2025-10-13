@@ -10,13 +10,16 @@
  *     Maxprograms - initial API and implementation
  *******************************************************************************/
 
-import * as lancedb from "@lancedb/lancedb";
+import { connect, Connection, Table } from "@lancedb/lancedb";
 import { FeatureExtractionPipeline, pipeline } from "@xenova/transformers";
 import { Field, FixedSizeList, Float32, Schema, Utf8 } from "apache-arrow";
 import { XMLElement } from "typesxml";
+import { BatchImporter } from "./batchimporter";
 import { LangEntry } from "./langEntry";
 import { Match } from "./match";
 import { MatchQuality } from "./matchQuality";
+import { PendingEntry } from "./pendingEntry";
+import { TMXReader } from "./tmxreader";
 import { Utils } from "./utils";
 import { XLIFFReader } from "./xliffreader";
 
@@ -27,18 +30,17 @@ export class HybridTM {
     static readonly QUALITY_MODEL: string = 'Xenova/LaBSE';                     // 768-dim, optimized for accuracy
     static readonly RESOURCE_MODEL: string = 'Xenova/multilingual-e5-small';    // 384-dim, optimized for modest hardware
 
-    private db: lancedb.Connection | null = null;
-    private table: lancedb.Table | null = null;
+    private db: Connection | null = null;
+    private table: Table | null = null;
     private dbPath: string = '';
     private embedder: FeatureExtractionPipeline | null = null;
     private modelName: string = '';
+    private initialized: boolean = false;
+    private initializationPromise: Promise<void> | null = null;
 
-    static async getInstance(filePath: string, modelName: string = HybridTM.QUALITY_MODEL): Promise<HybridTM> {
-        const instance: HybridTM = new HybridTM();
-        instance.dbPath = filePath;
-        instance.modelName = modelName;
-        await instance.initialize();
-        return instance;
+    constructor(filePath: string, modelName: string = HybridTM.QUALITY_MODEL) {
+        this.dbPath = filePath;
+        this.modelName = modelName;
     }
 
     // ============================
@@ -85,7 +87,7 @@ export class HybridTM {
     private async initializeDatabase(): Promise<void> {
         try {
             // Connect to LanceDB
-            this.db = await lancedb.connect(this.dbPath);
+            this.db = await connect(this.dbPath);
 
             // Check if table exists, if not create it
             const tableNames: string[] = await this.db.tableNames();
@@ -152,17 +154,21 @@ export class HybridTM {
     }
 
     private async ensureInitialized(): Promise<void> {
-        // Ensure database is initialized
-        if (!this.table) {
-            await this.initializeDatabase();
+        if (this.initialized) {
+            return;
         }
 
-        if (!this.table) {
-            throw new Error('Failed to initialize database table');
+        if (this.initializationPromise) {
+            await this.initializationPromise;
+            return;
         }
+
+        this.initializationPromise = this.initialize();
+        await this.initializationPromise;
+        this.initialized = true;
     }
 
-    private async ensureTable(): Promise<lancedb.Table> {
+    private async ensureTable(): Promise<Table> {
         await this.ensureInitialized();
         if (!this.table) {
             throw new Error('Database table is not available');
@@ -187,7 +193,7 @@ export class HybridTM {
     // Enhanced concordance search: finds text fragments and returns all language variants for matching units
     async concordanceSearch(textFragment: string, language: string, limit: number = 100): Promise<Map<string, XMLElement>[]> {
         try {
-            const table: lancedb.Table = await this.ensureTable();
+            const table: Table = await this.ensureTable();
 
             // Step 1: Find all entries that contain the text fragment in the given language
             const matchingEntries: any[] = await table
@@ -260,7 +266,7 @@ export class HybridTM {
 
     async fuzzyTranslationSearch(searchStr: string, srcLang: string, tgtLang: string, similarity: number, caseSensitive: boolean, limit: number = 100): Promise<Array<Match>> {
         try {
-            const table: lancedb.Table = await this.ensureTable();
+            const table: Table = await this.ensureTable();
 
             // Get all entries for the source language
             const sourceEntries: any[] = await table
@@ -371,7 +377,7 @@ export class HybridTM {
 
     async semanticTranslationSearch(searchStr: string, srcLang: string, tgtLang: string, similarity: number, limit: number = 100): Promise<Array<Match>> {
         try {
-            const table: lancedb.Table = await this.ensureTable();
+            const table: Table = await this.ensureTable();
 
             // Generate embedding for the search string
             const queryEmbedding: number[] = await this.generateEmbedding(searchStr);
@@ -453,7 +459,7 @@ export class HybridTM {
 
     async hybridTranslationSearch(searchStr: string, srcLang: string, tgtLang: string, similarity: number, caseSensitive: boolean, limit: number = 100): Promise<Array<Match>> {
         try {
-            const table: lancedb.Table = await this.ensureTable();
+            const table: Table = await this.ensureTable();
 
             // Generate embedding for the search string once
             const queryEmbedding: number[] = await this.generateEmbedding(searchStr);
@@ -552,7 +558,6 @@ export class HybridTM {
                 return text.includes(query);
             }).slice(0, limit);
 
-            console.log(`Text search found ${filteredResults.length} matches for "${queryText}"`);
             return filteredResults as LangEntry[];
 
         } catch (err) {
@@ -567,7 +572,7 @@ export class HybridTM {
 
     async storeLangEntry(fileId: string, original: string, unitId: string, lang: string, pureText: string, element: XMLElement, embeddings?: number[]): Promise<void> {
         try {
-            const table: lancedb.Table = await this.ensureTable();
+            const table: Table = await this.ensureTable();
 
             // Generate deterministic ID based on fileId, unitId, and language
             const entryId: string = `${fileId}:${unitId}:${lang}`;
@@ -623,6 +628,53 @@ export class HybridTM {
             await table.add([entry]);
         } catch (err) {
             console.error('Error storing language entry:', err);
+            throw err;
+        }
+    }
+
+    async storeBatchEntries(entries: PendingEntry[]): Promise<void> {
+        try {
+            const table: Table = await this.ensureTable();
+            const langEntries: LangEntry[] = [];
+
+            // Collect all entry IDs for bulk deletion
+            const entryIds: string[] = [];
+
+            // Generate embeddings one by one and build LangEntry objects
+            for (const entry of entries) {
+                const vectorEmbeddings: number[] = await this.generateEmbedding(entry.pureText);
+                const entryId: string = `${entry.fileId}:${entry.unitId}:${entry.language}`;
+                
+                const langEntry: LangEntry = {
+                    id: entryId,
+                    language: entry.language,
+                    pureText: entry.pureText,
+                    element: entry.element.toString(),
+                    fileId: entry.fileId,
+                    original: entry.original,
+                    unitId: entry.unitId,
+                    vector: vectorEmbeddings
+                };
+                
+                langEntries.push(langEntry);
+                entryIds.push(entryId);
+            }
+
+            // Delete any existing entries with these IDs to prevent duplicates
+            // This ensures that if the same file is imported twice, entries are overwritten
+            if (entryIds.length > 0) {
+                const idsFilter: string = entryIds.map(id => `'${id}'`).join(',');
+                try {
+                    await table.delete(`id IN (${idsFilter})`);
+                } catch (deleteErr) {
+                    // Entries might not exist, which is fine for first import
+                }
+            }
+
+            // Bulk insert all entries at once
+            await table.add(langEntries);
+        } catch (err) {
+            console.error('Error storing batch entries:', err);
             throw err;
         }
     }
@@ -707,8 +759,23 @@ export class HybridTM {
     // DATA IMPORT METHODS
     // ============================
 
-    importXLIFF(filePath: string): void {
-        const reader: XLIFFReader = new XLIFFReader(filePath, this);
-        reader.parse();
+    async importXLIFF(filePath: string): Promise<void> {
+        // Phase 1: Parse XLIFF and write to temporary JSONL file
+        const reader: XLIFFReader = new XLIFFReader(filePath);
+        await reader.parse();
+        
+        // Phase 2: Batch import from JSONL file (asynchronous)
+        const importer: BatchImporter = new BatchImporter(this, reader.getTempFilePath(), reader.getEntryCount());
+        await importer.import();
+    }
+
+    async importTMX(filePath: string): Promise<void> {
+        // Phase 1: Parse TMX and write to temporary JSONL file
+        const reader: TMXReader = new TMXReader(filePath);
+        await reader.parse();
+        
+        // Phase 2: Batch import from JSONL file (asynchronous)
+        const importer: BatchImporter = new BatchImporter(this, reader.getTempFilePath(), reader.getEntryCount());
+        await importer.import();
     }
 }

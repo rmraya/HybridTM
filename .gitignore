@@ -6,3 +6,6 @@ dist/
 .scannerwork/
 models/
 data/
+*.lancedb/
+ts/xlifftest.ts
+ts/tmxtest.ts

@@ -10,39 +10,39 @@
  *     Maxprograms - initial API and implementation
  *******************************************************************************/
 
+import { basename, join } from 'path';
 import { tmpdir } from 'os';
-import { join } from 'path';
 import { SAXParser } from "typesxml/dist";
-import { XLIFFHandler } from "./xliffhandler";
+import { TMXHandler } from "./tmxhandler";
 
-export class XLIFFReader {
+export class TMXReader {
 
     parser: SAXParser;
-    tempFilePath: string;
-    handler: XLIFFHandler;
     filePath: string;
-    
+    handler: TMXHandler;
+    tempFilePath: string;
+
     constructor(filePath: string) {
         this.filePath = filePath;
+        const filename = basename(filePath);
         
         // Generate temp file path
         const tempDir = tmpdir();
-        const tempFileName = `xliff_${Date.now()}_${Math.random().toString(36).substring(7)}.jsonl`;
+        const tempFileName = `tmx_${Date.now()}_${Math.random().toString(36).substring(7)}.jsonl`;
         this.tempFilePath = join(tempDir, tempFileName);
         
         this.parser = new SAXParser();
-        this.handler = new XLIFFHandler(this.tempFilePath);
+        this.handler = new TMXHandler(this.tempFilePath, filename);
         this.parser.setContentHandler(this.handler);
     }
 
     async parse(): Promise<void> {
         return new Promise<void>((resolve, reject) => {
-            // Wait for the handler to signal completion
-            this.handler.onComplete(() => {
-                resolve();
-            });
-            
             try {
+                // Wait for the handler to signal completion
+                this.handler.onComplete(() => {
+                    resolve();
+                });
                 this.parser.parseFile(this.filePath);
             } catch (error: unknown) {
                 reject(error);
@@ -58,4 +58,3 @@ export class XLIFFReader {
         return this.handler.getEntryCount();
     }
 }
-

@@ -10,7 +10,14 @@
  *     Maxprograms - initial API and implementation
  *******************************************************************************/
 
-export class Constants {
-    public static readonly VERSION: string = "1.0.0";
-    public static readonly BUILD: string = "20251013_1455";
+import { XMLElement } from "typesxml/dist";
+
+
+export interface PendingEntry {
+    fileId: string;
+    original: string;
+    unitId: string;
+    language: string;
+    pureText: string;
+    element: XMLElement;
 }

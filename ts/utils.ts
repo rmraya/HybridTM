@@ -23,7 +23,7 @@ export class Utils {
             }
             if (node instanceof XMLElement) {
                 const child: XMLElement = node;
-                if ("pc" === child.getName() || "mrk" === child.getName()) {
+                if ("pc" === child.getName() || "mrk" === child.getName()|| "hi" === child.getName()) {
                     text += this.getPureText(child);
                 }
                 // purposedly ignore "cp" for now

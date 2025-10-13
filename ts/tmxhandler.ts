@@ -12,7 +12,7 @@
 
 import { Catalog, CData, ContentHandler, TextNode, XMLAttribute, XMLElement } from "typesxml/dist";
 import { Utils } from "./utils";
-import { createWriteStream, WriteStream } from 'fs';
+import { createWriteStream, WriteStream } from 'node:fs';
 
 export class TMXHandler implements ContentHandler {
 

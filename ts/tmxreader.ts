@@ -10,8 +10,8 @@
  *     Maxprograms - initial API and implementation
  *******************************************************************************/
 
-import { basename, join } from 'path';
-import { tmpdir } from 'os';
+import { basename, join } from 'node:path';
+import { tmpdir } from 'node:os';
 import { SAXParser } from "typesxml/dist";
 import { TMXHandler } from "./tmxhandler";
 
@@ -45,7 +45,7 @@ export class TMXReader {
                 });
                 this.parser.parseFile(this.filePath);
             } catch (error: unknown) {
-                reject(error);
+                reject(error instanceof Error ? error : new Error(String(error)));
             }
         });
     }

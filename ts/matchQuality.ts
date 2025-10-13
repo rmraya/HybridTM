@@ -21,7 +21,7 @@ export class MatchQuality {
         let mx: number = 0;
 
         // opt[i][j] = length of LCS of x[i..M] and y[j..N]
-        const opt: number[][] = Array(m + 1).fill(null).map(() => Array(n + 1).fill(0));
+        const opt: number[][] = new Array(m + 1).fill(null).map(() => new Array(n + 1).fill(0));
 
         // fill the matrix
         for (let i: number = 1; i <= m; i++) {

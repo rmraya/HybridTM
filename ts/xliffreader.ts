@@ -10,8 +10,8 @@
  *     Maxprograms - initial API and implementation
  *******************************************************************************/
 
-import { tmpdir } from 'os';
-import { join } from 'path';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import { SAXParser } from "typesxml/dist";
 import { XLIFFHandler } from "./xliffhandler";
 
@@ -45,7 +45,7 @@ export class XLIFFReader {
             try {
                 this.parser.parseFile(this.filePath);
             } catch (error: unknown) {
-                reject(error);
+                reject(error instanceof Error ? error : new Error(String(error)));
             }
         });
     }

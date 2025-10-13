@@ -10,8 +10,8 @@
  *     Maxprograms - initial API and implementation
  *******************************************************************************/
 
-import { createReadStream, existsSync, unlinkSync, ReadStream } from 'fs';
-import { createInterface, Interface } from 'readline';
+import { createReadStream, existsSync, unlinkSync, ReadStream } from 'node:fs';
+import { createInterface, Interface } from 'node:readline';
 import { HybridTM } from './hybridtm';
 import { PendingEntry } from './pendingEntry';
 import { Utils } from './utils';

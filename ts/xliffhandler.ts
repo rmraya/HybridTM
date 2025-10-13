@@ -10,7 +10,7 @@
  *     Maxprograms - initial API and implementation
  *******************************************************************************/
 
-import { createWriteStream, WriteStream } from 'fs';
+import { createWriteStream, WriteStream } from 'node:fs';
 import { Catalog, CData, ContentHandler, TextNode, XMLAttribute, XMLElement, XMLNode } from "typesxml/dist";
 import { Utils } from "./utils";
 

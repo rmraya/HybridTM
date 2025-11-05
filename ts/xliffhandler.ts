@@ -11,7 +11,7 @@
  *******************************************************************************/
 
 import { createWriteStream, WriteStream } from 'node:fs';
-import { Catalog, CData, ContentHandler, TextNode, XMLAttribute, XMLElement, XMLNode } from "typesxml/dist";
+import { Catalog, CData, ContentHandler, Grammar, TextNode, XMLAttribute, XMLElement, XMLNode } from "typesxml/dist";
 import { Utils } from "./utils";
 
 export class XLIFFHandler implements ContentHandler {
@@ -228,5 +228,9 @@ export class XLIFFHandler implements ContentHandler {
         };
         this.writeStream.write(JSON.stringify(targetEntry) + '\n');
         this.entryCount++;
+    }
+
+    getGrammar(): Grammar | undefined {
+        return undefined;
     }
 }

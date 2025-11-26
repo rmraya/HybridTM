@@ -18,15 +18,15 @@
     "keywords": [],
     "license": "EPL-1.0",
     "dependencies": {
-        "@lancedb/lancedb": "^0.22.2",
+        "@lancedb/lancedb": "^0.22.3",
         "@xenova/transformers": "^2.17.2",
         "apache-arrow": "^18.1.0",
-        "typesbcp47": "^1.10.0",
-        "typesxml": "^1.12.0"
+        "typesbcp47": "^1.13.0",
+        "typesxml": "^1.14.0"
     },
     "devDependencies": {
         "@types/flatbuffers": "^1.10.3",
-        "@types/node": "^24.10.0",
+        "@types/node": "^24.10.1",
         "ts-node": "^10.9.2",
         "typescript": "^5.9.3"
     }

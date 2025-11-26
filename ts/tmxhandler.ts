@@ -32,6 +32,10 @@ export class TMXHandler implements ContentHandler {
         this.writeStream = createWriteStream(tempFilePath, { encoding: 'utf8' });
     }
 
+    setGrammar(grammar: Grammar | undefined): void {
+        // do nothing
+    }
+
     onComplete(callback: () => void): void {
         this.completionCallback = callback;
     }

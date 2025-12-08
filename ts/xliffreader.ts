@@ -13,7 +13,7 @@
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { SAXParser } from "typesxml/dist";
-import { XLIFFHandler } from "./xliffhandler";
+import { XLIFFHandler } from "./xliffHandler";
 
 export class XLIFFReader {
 
@@ -27,7 +27,7 @@ export class XLIFFReader {
         
         // Generate temp file path
         const tempDir = tmpdir();
-        const tempFileName = `xliff_${Date.now()}_${Math.random().toString(36).substring(7)}.jsonl`;
+        const tempFileName = 'xliff_' + Date.now() + '_' + Math.random().toString(36).substring(7) + '.jsonl';
         this.tempFilePath = join(tempDir, tempFileName);
         
         this.parser = new SAXParser();

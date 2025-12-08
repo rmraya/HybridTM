@@ -11,7 +11,7 @@
  *******************************************************************************/
 
 export class MatchQuality {
-    
+
     private static readonly PENALTY = 2;
 
     private static lcs(x: string, y: string): string {
@@ -54,7 +54,7 @@ export class MatchQuality {
         x = x.trim();
         y = y.trim();
         const longest: number = Math.max(x.length, y.length);
-        
+
         if (longest === 0) {
             return 0;
         }
@@ -73,7 +73,7 @@ export class MatchQuality {
         let count: number = -1;
         let idx: number;
         let lcs: string = MatchQuality.lcs(a, b);
-        
+
         while (lcs.trim().length > 0 && lcs.length > longest * MatchQuality.PENALTY / 100) {
             count++;
             idx = a.indexOf(lcs);
@@ -82,12 +82,12 @@ export class MatchQuality {
             b = b.substring(0, idx) + b.substring(idx + lcs.length);
             lcs = MatchQuality.lcs(a, b);
         }
-        
+
         result = 100 * (longest - a.length) / longest - count * MatchQuality.PENALTY;
         if (result < 0) {
             result = 0;
         }
-        
+
         return Math.round(result);
     }
 }

@@ -11,21 +11,21 @@
  *******************************************************************************/
 
 import { connect, Connection, Table } from "@lancedb/lancedb";
-import { FeatureExtractionPipeline, pipeline } from "@xenova/transformers";
+import { FeatureExtractionPipeline, pipeline, Tensor } from "@xenova/transformers";
 import { Field, FixedSizeList, Float32, Schema, Utf8 } from "apache-arrow";
 import { XMLElement } from "typesxml";
-import { BatchImporter } from "./batchimporter";
+import { BatchImporter } from "./batchImporter";
 import { LangEntry } from "./langEntry";
 import { Match } from "./match";
 import { MatchQuality } from "./matchQuality";
 import { PendingEntry } from "./pendingEntry";
-import { TMXReader } from "./tmxreader";
+import { TMXReader } from "./tmxReader";
 import { Utils } from "./utils";
-import { XLIFFReader } from "./xliffreader";
+import { XLIFFReader } from "./xliffReader";
 
 export class HybridTM {
 
-    // THREE OPTIMIZED MODELS
+    // OPTIMIZED MODELS
     static readonly SPEED_MODEL: string = 'Xenova/bge-small-en-v1.5';           // 384-dim, optimized for real-time
     static readonly QUALITY_MODEL: string = 'Xenova/LaBSE';                     // 768-dim, optimized for accuracy
     static readonly RESOURCE_MODEL: string = 'Xenova/multilingual-e5-small';    // 384-dim, optimized for modest hardware
@@ -59,15 +59,14 @@ export class HybridTM {
             }
 
             // Generate a small test embedding
-            const testResult: any = await this.embedder('test', {
+            const testResult: Tensor = await this.embedder('test', {
                 pooling: 'mean',
                 normalize: true
             });
-
             return Array.from(testResult.data).length;
-        } catch (err) {
+        } catch (err: unknown) {
             console.error('Error detecting model dimensions:', err);
-            throw new Error(`Unable to detect model dimensions for ${this.modelName}: ${err instanceof Error ? err.message : String(err)}`);
+            throw new Error('Unable to detect model dimensions for ' + this.modelName + ': ' + (err instanceof Error ? err.message : String(err)));
         }
     }
 
@@ -78,9 +77,9 @@ export class HybridTM {
                 this.initializeDatabase(),
                 this.initializeEmbedder()
             ]);
-        } catch (err) {
+        } catch (err: unknown) {
             console.error('Failed to initialize HybridTM:', err);
-            throw new Error(`HybridTM initialization failed: ${err instanceof Error ? err.message : String(err)}`);
+            throw new Error('HybridTM initialization failed: ' + (err instanceof Error ? err.message : String(err)));
         }
     }
 
@@ -112,7 +111,7 @@ export class HybridTM {
             } else {
                 this.table = await this.db.openTable('langEntry');
             }
-        } catch (err) {
+        } catch (err: unknown) {
             console.error('Error initializing LanceDB:', err);
             throw err;
         }
@@ -121,7 +120,7 @@ export class HybridTM {
     private async initializeEmbedder(): Promise<void> {
         try {
             this.embedder = await pipeline('feature-extraction', this.modelName);
-        } catch (err) {
+        } catch (err: unknown) {
             console.error('Error initializing embedder:', err);
             throw err;
         }
@@ -139,7 +138,7 @@ export class HybridTM {
             }
 
             // Generate embeddings using the transformer model
-            const result: any = await this.embedder(text, {
+            const result: Tensor = await this.embedder(text, {
                 pooling: 'mean',
                 normalize: true
             });
@@ -147,7 +146,7 @@ export class HybridTM {
             // Convert tensor to array
             const embedding: number[] = Array.from(result.data);
             return embedding;
-        } catch (err) {
+        } catch (err: unknown) {
             console.error('Error generating embedding:', err);
             throw err;
         }
@@ -181,7 +180,7 @@ export class HybridTM {
             if (this.db) {
                 // LanceDB connections are automatically managed
             }
-        } catch (err) {
+        } catch (err: unknown) {
             console.error('Error closing database:', err);
         }
     }
@@ -190,19 +189,19 @@ export class HybridTM {
     // SEARCH METHODS
     // ============================
 
-    // Enhanced concordance search: finds text fragments and returns all language variants for matching units
     async concordanceSearch(textFragment: string, language: string, limit: number = 100): Promise<Map<string, XMLElement>[]> {
+        // Enhanced concordance search: finds text fragments and returns all language variants for matching units
         try {
             const table: Table = await this.ensureTable();
 
             // Step 1: Find all entries that contain the text fragment in the given language
-            const matchingEntries: any[] = await table
+            const matchingEntries: LangEntry[] = (await table
                 .query()
-                .where(`language = '${language}'`)
-                .toArray();
+                .where('language = ' + '\'' + language + '\'')
+                .toArray()) as LangEntry[];
 
             // Filter by text fragment in JavaScript (more reliable for text search)
-            const fragmentEntries: any[] = matchingEntries.filter((row: any) => {
+            const fragmentEntries: LangEntry[] = matchingEntries.filter((row: LangEntry) => {
                 if (!row.pureText) return false;
                 const text: string = row.pureText.toLowerCase();
                 const fragment: string = textFragment.toLowerCase();
@@ -215,8 +214,8 @@ export class HybridTM {
 
             // Step 2: Extract unique {fileId, unitId} combinations
             const uniqueUnits = new Set<string>();
-            fragmentEntries.forEach((entry: any) => {
-                const unitKey = `${entry.fileId}:${entry.unitId}`;
+            fragmentEntries.forEach((entry: LangEntry) => {
+                const unitKey: string = entry.fileId + ':' + entry.unitId;
                 uniqueUnits.add(unitKey);
             });
 
@@ -228,25 +227,25 @@ export class HybridTM {
 
                 // Get all language variants for this unit using JavaScript filtering
                 // This is more reliable than LanceDB WHERE clauses for exact string matching
-                const allEntries: any[] = await table
+                const allEntries: LangEntry[] = (await table
                     .query()
-                    .toArray();
+                    .toArray()) as LangEntry[];
 
-                const allVariants: any[] = allEntries.filter((entry: any) => {
+                const allVariants: LangEntry[] = allEntries.filter((entry: LangEntry) => {
                     return entry.fileId === fileId && entry.unitId === unitId;
                 });
 
                 // Create a map of language -> XMLElement for this unit
                 const languageMap: Map<string, XMLElement> = new Map<string, XMLElement>();
 
-                allVariants.forEach((variant: any) => {
+                allVariants.forEach((variant: LangEntry) => {
                     try {
                         // Create XMLElement with the text content
                         const xmlElement: XMLElement = Utils.buildXMLElement(variant.element);
                         languageMap.set(variant.language, xmlElement);
-                    } catch (parseErr) {
+                    } catch (parseErr: unknown) {
                         const errorMessage: string = parseErr instanceof Error ? parseErr.message : String(parseErr);
-                        throw new Error(`Failed to create XML element for ${variant.id}: ${errorMessage}`);
+                        throw new Error('Failed to create XML element for ' + variant.id + ': ' + errorMessage);
                     }
                 });
 
@@ -255,10 +254,8 @@ export class HybridTM {
                     result.push(languageMap);
                 }
             }
-
             return result;
-
-        } catch (err) {
+        } catch (err: unknown) {
             console.error('Error performing concordance search:', err);
             throw err;
         }
@@ -269,15 +266,17 @@ export class HybridTM {
             const table: Table = await this.ensureTable();
 
             // Get all entries for the source language
-            const sourceEntries: any[] = await table
+            const sourceEntries: LangEntry[] = (await table
                 .query()
-                .where(`language = '${srcLang}'`)
-                .toArray();
+                .where('language = \'' + srcLang + '\'')
+                .toArray()) as LangEntry[];
 
             const matches: Array<Match> = [];
 
             for (const sourceEntry of sourceEntries) {
-                if (!sourceEntry.pureText) continue;
+                if (!sourceEntry.pureText) {
+                    continue;
+                }
 
                 // Calculate quality based on text similarity
                 const sourceText: string = caseSensitive ? sourceEntry.pureText : sourceEntry.pureText.toLowerCase();
@@ -287,14 +286,14 @@ export class HybridTM {
                 // Only include matches that meet the minimum similarity threshold
                 if (quality >= similarity) {
                     // Find corresponding target language entry for the same unit
-                    const targetEntryId: string = `${sourceEntry.fileId}:${sourceEntry.unitId}:${tgtLang}`;
-                    const targetEntries: any[] = await table
+                    const targetEntryId: string = sourceEntry.fileId + ':' + sourceEntry.unitId + ':' + tgtLang;
+                    const targetEntries: LangEntry[] = (await table
                         .query()
-                        .where(`id = '${targetEntryId}'`)
-                        .toArray();
+                        .where('id = \'' + targetEntryId + '\'')
+                        .toArray()) as LangEntry[];
 
                     if (targetEntries.length > 0) {
-                        const targetEntry: any = targetEntries[0];
+                        const targetEntry: LangEntry = targetEntries[0];
 
                         try {
                             // Create XMLElements from stored strings
@@ -310,8 +309,8 @@ export class HybridTM {
                             );
 
                             matches.push(match);
-                        } catch (parseErr) {
-                            console.error(`Error creating XMLElements for match: ${parseErr}`);
+                        } catch (parseErr: unknown) {
+                            console.error('Error creating XMLElements for match: ' + (parseErr instanceof Error ? parseErr.message : String(parseErr)));
                             // Skip this match if XML parsing fails
                         }
                     }
@@ -320,9 +319,8 @@ export class HybridTM {
 
             // Sort matches by quality (highest first) and apply limit
             matches.sort((a, b) => b.quality - a.quality);
-
             return matches.slice(0, limit);
-        } catch (err) {
+        } catch (err: unknown) {
             console.error('Error performing translation search:', err);
             return [];
         }
@@ -342,16 +340,16 @@ export class HybridTM {
             const queryEmbedding: number[] = await this.generateEmbedding(queryText);
 
             // Perform vector search with the generated embedding
-            const results: any[] = await this.table
+            const results: LangEntry[] = (await this.table
                 .vectorSearch(queryEmbedding)
                 .limit(limit)
-                .toArray();
+                .toArray()) as LangEntry[];
 
             // Filter by language in JavaScript for now
-            const filteredResults: any[] = results.filter((row: any) => row.language === language);
+            const filteredResults: LangEntry[] = results.filter((row: LangEntry) => row.language === language);
 
-            return filteredResults as LangEntry[];
-        } catch (err) {
+            return filteredResults;
+        } catch (err: unknown) {
             console.error('Error performing semantic search:', err);
             throw err;
         }
@@ -383,15 +381,17 @@ export class HybridTM {
             const queryEmbedding: number[] = await this.generateEmbedding(searchStr);
 
             // Get all entries for the source language
-            const sourceEntries: any[] = await table
+            const sourceEntries: LangEntry[] = (await table
                 .query()
-                .where(`language = '${srcLang}'`)
-                .toArray();
+                .where('language = ' + '\'' + srcLang + '\'')
+                .toArray()) as LangEntry[];
 
             const matches: Array<Match> = [];
 
             for (const sourceEntry of sourceEntries) {
-                if (!sourceEntry.pureText || !sourceEntry.vector) continue;
+                if (!sourceEntry.pureText || !sourceEntry.vector) {
+                    continue;
+                }
 
                 // Calculate semantic similarity using Manhattan distance
                 const semanticScore: number = this.manhattanSimilarity(queryEmbedding, sourceEntry.vector);
@@ -402,15 +402,14 @@ export class HybridTM {
                 // Only include matches that meet the minimum similarity threshold
                 if (qualityPercent >= similarity) {
                     // Find corresponding target language entry for the same unit
-                    const targetEntryId: string = `${sourceEntry.fileId}:${sourceEntry.unitId}:${tgtLang}`;
-                    const targetEntries: any[] = await table
+                    const targetEntryId: string = sourceEntry.fileId + ':' + sourceEntry.unitId + ':' + tgtLang;
+                    const targetEntries: LangEntry[] = (await table
                         .query()
-                        .where(`id = '${targetEntryId}'`)
-                        .toArray();
+                        .where('id = ' + '\'' + targetEntryId + '\'')
+                        .toArray()) as LangEntry[];
 
                     if (targetEntries.length > 0) {
-                        const targetEntry: any = targetEntries[0];
-
+                        const targetEntry: LangEntry = targetEntries[0];
                         try {
                             // Create XMLElements from stored strings
                             const sourceElement: XMLElement = Utils.buildXMLElement(sourceEntry.element);
@@ -425,8 +424,8 @@ export class HybridTM {
                             );
 
                             matches.push(match);
-                        } catch (parseErr) {
-                            console.error(`Error creating XMLElements for semantic match: ${parseErr}`);
+                        } catch (parseErr: unknown) {
+                            console.error('Error creating XMLElements for semantic match: ' + (parseErr instanceof Error ? parseErr.message : String(parseErr)));
                             // Skip this match if XML parsing fails
                         }
                     }
@@ -435,9 +434,8 @@ export class HybridTM {
 
             // Sort matches by quality (highest semantic similarity first) and apply limit
             matches.sort((a, b) => b.quality - a.quality);
-
             return matches.slice(0, limit);
-        } catch (err) {
+        } catch (err: unknown) {
             console.error('Error performing semantic search with quality:', err);
             return [];
         }
@@ -465,10 +463,10 @@ export class HybridTM {
             const queryEmbedding: number[] = await this.generateEmbedding(searchStr);
 
             // Get all entries for the source language
-            const sourceEntries: any[] = await table
+            const sourceEntries: LangEntry[] = (await table
                 .query()
-                .where(`language = '${srcLang}'`)
-                .toArray();
+                .where('language = ' + '\'' + srcLang + '\'')
+                .toArray()) as LangEntry[];
 
             const matches: Array<Match> = [];
 
@@ -493,14 +491,14 @@ export class HybridTM {
                 // Only include matches that meet the minimum similarity threshold
                 if (hybridScorePercent >= similarity) {
                     // Find corresponding target language entry for the same unit
-                    const targetEntryId: string = `${sourceEntry.fileId}:${sourceEntry.unitId}:${tgtLang}`;
-                    const targetEntries: any[] = await table
+                    const targetEntryId: string = sourceEntry.fileId + ':' + sourceEntry.unitId + ':' + tgtLang;
+                    const targetEntries: LangEntry[] = (await table
                         .query()
-                        .where(`id = '${targetEntryId}'`)
-                        .toArray();
+                        .where('id = ' + '\'' + targetEntryId + '\'')
+                        .toArray()) as LangEntry[];
 
                     if (targetEntries.length > 0) {
-                        const targetEntry: any = targetEntries[0];
+                        const targetEntry: LangEntry = targetEntries[0];
 
                         try {
                             // Create XMLElements from stored strings
@@ -516,8 +514,8 @@ export class HybridTM {
                             );
 
                             matches.push(match);
-                        } catch (parseErr) {
-                            console.error(`Error creating XMLElements for hybrid match: ${parseErr}`);
+                        } catch (parseErr: unknown) {
+                            console.error('Error creating XMLElements for hybrid match: ' + (parseErr instanceof Error ? parseErr.message : String(parseErr)));
                             // Skip this match if XML parsing fails
                         }
                     }
@@ -528,7 +526,7 @@ export class HybridTM {
             matches.sort((a, b) => b.quality - a.quality);
 
             return matches.slice(0, limit);
-        } catch (err) {
+        } catch (err: unknown) {
             console.error('Error performing hybrid translation search:', err);
             return [];
         }
@@ -545,13 +543,13 @@ export class HybridTM {
             }
 
             // Get all entries for the language and filter in JavaScript (more reliable for text search)
-            const allResults: any[] = await this.table
+            const allResults: LangEntry[] = (await this.table
                 .query()
-                .where(`language = '${language}'`)
-                .toArray();
+                .where('language = ' + '\'' + language + '\'')
+                .toArray()) as LangEntry[];
 
             // Perform fuzzy text matching in JavaScript
-            const filteredResults: any[] = allResults.filter((row: any) => {
+            const filteredResults: LangEntry[] = allResults.filter((row: LangEntry) => {
                 if (!row.pureText) return false;
                 const text: string = row.pureText.toLowerCase();
                 const query: string = queryText.toLowerCase();
@@ -560,7 +558,7 @@ export class HybridTM {
 
             return filteredResults as LangEntry[];
 
-        } catch (err) {
+        } catch (err: unknown) {
             console.error('Error performing text search:', err);
             return [];
         }
@@ -575,16 +573,16 @@ export class HybridTM {
             const table: Table = await this.ensureTable();
 
             // Generate deterministic ID based on fileId, unitId, and language
-            const entryId: string = `${fileId}:${unitId}:${lang}`;
+            const entryId: string = fileId + ':' + unitId + ':' + lang;
 
             // Check if entry already exists and if content has changed
-            const existingEntries: any[] = await table
+            const existingEntries: LangEntry[] = (await table
                 .query()
-                .where(`id = '${entryId}'`)
-                .toArray();
+                .where('id = ' + '\'' + entryId + '\'')
+                .toArray()) as LangEntry[];
 
             if (existingEntries.length > 0) {
-                const existingEntry: any = existingEntries[0];
+                const existingEntry: LangEntry = existingEntries[0];
 
                 // Compare content to see if it has changed
                 const contentChanged: boolean = (
@@ -620,13 +618,13 @@ export class HybridTM {
 
             // Delete existing entry first (LanceDB upsert approach)
             try {
-                await table.delete(`id = '${entryId}'`);
-            } catch (deleteErr) {
+                await table.delete('id = ' + '\'' + entryId + '\'');
+            } catch (deleteErr: unknown) {
                 // Entry might not exist, which is fine
             }
 
             await table.add([entry]);
-        } catch (err) {
+        } catch (err: unknown) {
             console.error('Error storing language entry:', err);
             throw err;
         }
@@ -643,8 +641,8 @@ export class HybridTM {
             // Generate embeddings one by one and build LangEntry objects
             for (const entry of entries) {
                 const vectorEmbeddings: number[] = await this.generateEmbedding(entry.pureText);
-                const entryId: string = `${entry.fileId}:${entry.unitId}:${entry.language}`;
-                
+                const entryId: string = entry.fileId + ':' + entry.unitId + ':' + entry.language;
+
                 const langEntry: LangEntry = {
                     id: entryId,
                     language: entry.language,
@@ -655,7 +653,7 @@ export class HybridTM {
                     unitId: entry.unitId,
                     vector: vectorEmbeddings
                 };
-                
+
                 langEntries.push(langEntry);
                 entryIds.push(entryId);
             }
@@ -663,17 +661,17 @@ export class HybridTM {
             // Delete any existing entries with these IDs to prevent duplicates
             // This ensures that if the same file is imported twice, entries are overwritten
             if (entryIds.length > 0) {
-                const idsFilter: string = entryIds.map(id => `'${id}'`).join(',');
+                const idsFilter: string = entryIds.map(id => '\'' + id + '\'').join(',');
                 try {
-                    await table.delete(`id IN (${idsFilter})`);
-                } catch (deleteErr) {
+                    await table.delete('id IN (' + idsFilter + ')');
+                } catch (deleteErr: unknown) {
                     // Entries might not exist, which is fine for first import
                 }
             }
 
             // Bulk insert all entries at once
             await table.add(langEntries);
-        } catch (err) {
+        } catch (err: unknown) {
             console.error('Error storing batch entries:', err);
             throw err;
         }
@@ -690,14 +688,14 @@ export class HybridTM {
                 throw new Error('Failed to initialize database table');
             }
 
-            const entryId: string = `${fileId}:${unitId}:${lang}`;
-            const existingEntries: any[] = await this.table
+            const entryId: string = fileId + ':' + unitId + ':' + lang;
+            const existingEntries: LangEntry[] = (await this.table
                 .query()
-                .where(`id = '${entryId}'`)
-                .toArray();
+                .where('id = ' + '\'' + entryId + '\'')
+                .toArray()) as LangEntry[];
 
             return existingEntries.length > 0;
-        } catch (err) {
+        } catch (err: unknown) {
             console.error('Error checking entry existence:', err);
             return false;
         }
@@ -714,31 +712,29 @@ export class HybridTM {
                 throw new Error('Failed to initialize database table');
             }
 
-            const entryId = `${fileId}:${unitId}:${lang}`;
-            const existingEntries = await this.table
+            const entryId: string = fileId + ':' + unitId + ':' + lang;
+            const existingEntries: LangEntry[] = (await this.table
                 .query()
-                .where(`id = '${entryId}'`)
-                .toArray();
+                .where('id = ' + '\'' + entryId + '\'')
+                .toArray()) as LangEntry[];
 
-            return existingEntries.length > 0 ? existingEntries[0] as LangEntry : null;
-        } catch (err) {
+            return existingEntries.length > 0 ? existingEntries[0] : null;
+        } catch (err: unknown) {
             console.error('Error retrieving language entry:', err);
             return null;
         }
     }
 
-    // Method to delete a specific language entry
     async deleteLangEntry(fileId: string, unitId: string, lang: string): Promise<boolean> {
         try {
             if (!this.table) {
                 await this.initializeDatabase();
             }
-
             if (!this.table) {
                 throw new Error('Failed to initialize database table');
             }
 
-            const entryId = `${fileId}:${unitId}:${lang}`;
+            const entryId: string = fileId + ':' + unitId + ':' + lang;
 
             // Check if entry exists first
             const exists: boolean = await this.entryExists(fileId, unitId, lang);
@@ -747,9 +743,9 @@ export class HybridTM {
             }
 
             // Delete the entry
-            await this.table.delete(`id = '${entryId}'`);
+            await this.table.delete('id = \'' + entryId + '\'');
             return true;
-        } catch (err) {
+        } catch (err: unknown) {
             console.error('Error deleting language entry:', err);
             return false;
         }
@@ -763,7 +759,7 @@ export class HybridTM {
         // Phase 1: Parse XLIFF and write to temporary JSONL file
         const reader: XLIFFReader = new XLIFFReader(filePath);
         await reader.parse();
-        
+
         // Phase 2: Batch import from JSONL file (asynchronous)
         const importer: BatchImporter = new BatchImporter(this, reader.getTempFilePath(), reader.getEntryCount());
         await importer.import();
@@ -773,7 +769,7 @@ export class HybridTM {
         // Phase 1: Parse TMX and write to temporary JSONL file
         const reader: TMXReader = new TMXReader(filePath);
         await reader.parse();
-        
+
         // Phase 2: Batch import from JSONL file (asynchronous)
         const importer: BatchImporter = new BatchImporter(this, reader.getTempFilePath(), reader.getEntryCount());
         await importer.import();

@@ -31,9 +31,9 @@ export class BatchImporter {
 
     async import(): Promise<void> {
         try {
-            console.log(`Starting batch import from ${this.tempFilePath}...`);
+            console.log('Starting batch import from ' + this.tempFilePath + '...');
             if (this.totalEntries > 0) {
-                console.log(`Total entries to import: ${this.totalEntries.toLocaleString()}`);
+                console.log('Total entries to import: ' + this.totalEntries.toLocaleString());
             }
             
             const fileStream: ReadStream = createReadStream(this.tempFilePath, { encoding: 'utf8' });
@@ -84,15 +84,15 @@ export class BatchImporter {
                             const etaMinutes: number = Math.floor(etaSeconds / 60);
                             const etaSecondsRemainder: number = Math.floor(etaSeconds % 60);
                             
-                            console.log(`Progress: ${totalProcessed.toLocaleString()}/${this.totalEntries.toLocaleString()} (${progress.toFixed(1)}%) - ETA: ${etaMinutes}m ${etaSecondsRemainder}s - ${rate.toFixed(1)} entries/sec`);
+                            console.log('Progress: ' + totalProcessed.toLocaleString() + '/' + this.totalEntries.toLocaleString() + ' (' + progress.toFixed(1) + '%) - ETA: ' + etaMinutes + 'm ' + etaSecondsRemainder + 's - ' + rate.toFixed(1) + ' entries/sec');
                         } else {
-                            console.log(`Processed: ${totalProcessed.toLocaleString()} entries - ${rate.toFixed(1)} entries/sec`);
+                            console.log('Processed: ' + totalProcessed.toLocaleString() + ' entries - ' + rate.toFixed(1) + ' entries/sec');
                         }
                         
                         batch = [];
                     }
                 } catch (parseErr) {
-                    console.error(`Error parsing JSONL line: ${parseErr}`);
+                    console.error('Error parsing JSONL line: ' + parseErr);
                     // Continue with next line
                 }
             }
@@ -109,10 +109,10 @@ export class BatchImporter {
             const seconds: number = Math.floor(totalTime % 60);
             const avgRate: number = totalProcessed / totalTime;
             
-            console.log(`\nBatch import complete!`);
-            console.log(`Total entries imported: ${totalProcessed.toLocaleString()}`);
-            console.log(`Total time: ${minutes}m ${seconds}s`);
-            console.log(`Average rate: ${avgRate.toFixed(1)} entries/sec`);
+            console.log('\nBatch import complete!');
+            console.log('Total entries imported: ' + totalProcessed.toLocaleString());
+            console.log('Total time: ' + minutes + 'm ' + seconds + 's');
+            console.log('Average rate: ' + avgRate.toFixed(1) + ' entries/sec');
 
             // Clean up the temporary file
             await this.cleanup();
@@ -128,7 +128,7 @@ export class BatchImporter {
                 unlinkSync(this.tempFilePath);
             }
         } catch (err) {
-            console.error(`Error cleaning up temporary file ${this.tempFilePath}:`, err);
+            console.error('Error cleaning up temporary file ' + this.tempFilePath + ':', err);
             // Don't throw - cleanup failure shouldn't fail the import
         }
     }

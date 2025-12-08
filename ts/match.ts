@@ -19,7 +19,7 @@ export class Match {
     origin: string;
     quality: number;
 
-    constructor(source: XMLElement, target: XMLElement, origin: string, quality:number) {
+    constructor(source: XMLElement, target: XMLElement, origin: string, quality: number) {
         this.source = source;
         this.target = target;
         this.origin = origin;

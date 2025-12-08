@@ -13,26 +13,26 @@
 import { basename, join } from 'node:path';
 import { tmpdir } from 'node:os';
 import { SAXParser } from "typesxml/dist";
-import { TMXHandler } from "./tmxhandler";
+import { TMXHandler } from "./tmxHandler";
 
 export class TMXReader {
 
     parser: SAXParser;
     filePath: string;
     handler: TMXHandler;
-    tempFilePath: string;
+    jsonlTempPath: string;
 
     constructor(filePath: string) {
         this.filePath = filePath;
         const filename = basename(filePath);
         
-        // Generate temp file path
+        // Generate temp file path for the JSONL output
         const tempDir = tmpdir();
-        const tempFileName = `tmx_${Date.now()}_${Math.random().toString(36).substring(7)}.jsonl`;
-        this.tempFilePath = join(tempDir, tempFileName);
+        const tempFileName = 'tmx_' + Date.now() + '_' + Math.random().toString(36).substring(7) + '.jsonl';
+        this.jsonlTempPath = join(tempDir, tempFileName);
         
         this.parser = new SAXParser();
-        this.handler = new TMXHandler(this.tempFilePath, filename);
+        this.handler = new TMXHandler(this.jsonlTempPath, filename);
         this.parser.setContentHandler(this.handler);
     }
 
@@ -51,7 +51,7 @@ export class TMXReader {
     }
 
     getTempFilePath(): string {
-        return this.tempFilePath;
+        return this.jsonlTempPath;
     }
 
     getEntryCount(): number {

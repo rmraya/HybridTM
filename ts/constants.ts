@@ -12,5 +12,5 @@
 
 export class Constants {
     public static readonly VERSION: string = "1.0.0";
-    public static readonly BUILD: string = "20251126_0904";
+    public static readonly BUILD: string = "20251208_1601";
 }

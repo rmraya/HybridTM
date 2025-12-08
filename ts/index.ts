@@ -13,6 +13,7 @@
 export { BatchImporter } from "./batchImporter";
 export { Constants } from "./constants";
 export { HybridTM } from "./hybridtm";
+export { HybridTMFactory, HybridTMInstanceMetadata } from "./hybridtmFactory";
 export { LangEntry } from "./langEntry";
 export { Match } from "./match";
 export { MatchQuality } from "./matchQuality";

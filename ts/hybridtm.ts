@@ -30,6 +30,7 @@ export class HybridTM {
     static readonly QUALITY_MODEL: string = 'Xenova/LaBSE';                     // 768-dim, optimized for accuracy
     static readonly RESOURCE_MODEL: string = 'Xenova/multilingual-e5-small';    // 384-dim, optimized for modest hardware
 
+    private name: string;
     private db: Connection | null = null;
     private table: Table | null = null;
     private dbPath: string = '';
@@ -38,7 +39,8 @@ export class HybridTM {
     private initialized: boolean = false;
     private initializationPromise: Promise<void> | null = null;
 
-    constructor(filePath: string, modelName: string = HybridTM.QUALITY_MODEL) {
+    constructor(name: string, filePath: string, modelName: string = HybridTM.QUALITY_MODEL) {
+        this.name = name;
         this.dbPath = filePath;
         this.modelName = modelName;
     }
@@ -261,94 +263,16 @@ export class HybridTM {
         }
     }
 
-    async fuzzyTranslationSearch(searchStr: string, srcLang: string, tgtLang: string, similarity: number, caseSensitive: boolean, limit: number = 100): Promise<Array<Match>> {
-        try {
-            const table: Table = await this.ensureTable();
-
-            // Get all entries for the source language
-            const sourceEntries: LangEntry[] = (await table
-                .query()
-                .where('language = \'' + srcLang + '\'')
-                .toArray()) as LangEntry[];
-
-            const matches: Array<Match> = [];
-
-            for (const sourceEntry of sourceEntries) {
-                if (!sourceEntry.pureText) {
-                    continue;
-                }
-
-                // Calculate quality based on text similarity
-                const sourceText: string = caseSensitive ? sourceEntry.pureText : sourceEntry.pureText.toLowerCase();
-                const queryText: string = caseSensitive ? searchStr : searchStr.toLowerCase();
-                const quality: number = MatchQuality.similarity(sourceText, queryText);
-
-                // Only include matches that meet the minimum similarity threshold
-                if (quality >= similarity) {
-                    // Find corresponding target language entry for the same unit
-                    const targetEntryId: string = sourceEntry.fileId + ':' + sourceEntry.unitId + ':' + tgtLang;
-                    const targetEntries: LangEntry[] = (await table
-                        .query()
-                        .where('id = \'' + targetEntryId + '\'')
-                        .toArray()) as LangEntry[];
-
-                    if (targetEntries.length > 0) {
-                        const targetEntry: LangEntry = targetEntries[0];
-
-                        try {
-                            // Create XMLElements from stored strings
-                            const sourceElement: XMLElement = Utils.buildXMLElement(sourceEntry.element);
-                            const targetElement: XMLElement = Utils.buildXMLElement(targetEntry.element);
-
-                            // Create Match object with quality score
-                            const match: Match = new Match(
-                                sourceElement,
-                                targetElement,
-                                this.dbPath, // origin is the translation memory name
-                                quality
-                            );
-
-                            matches.push(match);
-                        } catch (parseErr: unknown) {
-                            console.error('Error creating XMLElements for match: ' + (parseErr instanceof Error ? parseErr.message : String(parseErr)));
-                            // Skip this match if XML parsing fails
-                        }
-                    }
-                }
-            }
-
-            // Sort matches by quality (highest first) and apply limit
-            matches.sort((a, b) => b.quality - a.quality);
-            return matches.slice(0, limit);
-        } catch (err: unknown) {
-            console.error('Error performing translation search:', err);
-            return [];
-        }
-    }
-
     async semanticSearch(queryText: string, language: string, limit: number = 10): Promise<LangEntry[]> {
         try {
-            if (!this.table) {
-                await this.initializeDatabase();
-            }
-
-            if (!this.table) {
-                throw new Error('Failed to initialize database table');
-            }
-
-            // Generate embedding for the query text
+            const table: Table = await this.ensureTable();
             const queryEmbedding: number[] = await this.generateEmbedding(queryText);
-
-            // Perform vector search with the generated embedding
-            const results: LangEntry[] = (await this.table
+            const results: LangEntry[] = (await table
                 .vectorSearch(queryEmbedding)
+                .where('language = ' + '\'' + language + '\'')
                 .limit(limit)
                 .toArray()) as LangEntry[];
-
-            // Filter by language in JavaScript for now
-            const filteredResults: LangEntry[] = results.filter((row: LangEntry) => row.language === language);
-
-            return filteredResults;
+            return results;
         } catch (err: unknown) {
             console.error('Error performing semantic search:', err);
             throw err;
@@ -368,9 +292,8 @@ export class HybridTM {
             sumAbsDiff += Math.abs(a[i] - b[i]);
         }
 
-        // Convert to similarity using exponential decay
-        // This typically gives higher, more intuitive scores
-        return Math.exp(-sumAbsDiff / a.length);
+        // Convert to similarity using exponential decay (as percentage)
+        return Math.round(Math.exp(-sumAbsDiff / a.length) * 100);
     }
 
     async semanticTranslationSearch(searchStr: string, srcLang: string, tgtLang: string, similarity: number, limit: number = 100): Promise<Array<Match>> {
@@ -382,10 +305,9 @@ export class HybridTM {
 
             // Get all entries for the source language
             const sourceEntries: LangEntry[] = (await table
-                .query()
+                .vectorSearch(queryEmbedding)
                 .where('language = ' + '\'' + srcLang + '\'')
                 .toArray()) as LangEntry[];
-
             const matches: Array<Match> = [];
 
             for (const sourceEntry of sourceEntries) {
@@ -395,12 +317,11 @@ export class HybridTM {
 
                 // Calculate semantic similarity using Manhattan distance
                 const semanticScore: number = this.manhattanSimilarity(queryEmbedding, sourceEntry.vector);
-
-                // Convert similarity to percentage (0-100)
-                const qualityPercent: number = Math.round(semanticScore * 100);
+                const fuzzyScore: number = MatchQuality.similarity(searchStr, sourceEntry.pureText);
+                const hybridScore: number = this.computeHybridScore(fuzzyScore, semanticScore);
 
                 // Only include matches that meet the minimum similarity threshold
-                if (qualityPercent >= similarity) {
+                if (hybridScore >= similarity) {
                     // Find corresponding target language entry for the same unit
                     const targetEntryId: string = sourceEntry.fileId + ':' + sourceEntry.unitId + ':' + tgtLang;
                     const targetEntries: LangEntry[] = (await table
@@ -419,19 +340,17 @@ export class HybridTM {
                             const match: Match = new Match(
                                 sourceElement,
                                 targetElement,
-                                this.dbPath, // origin is the translation memory name
-                                qualityPercent
+                                this.name,
+                                hybridScore
                             );
-
                             matches.push(match);
                         } catch (parseErr: unknown) {
-                            console.error('Error creating XMLElements for semantic match: ' + (parseErr instanceof Error ? parseErr.message : String(parseErr)));
+                            console.error('Error creating Match for semantic translation search: ' + (parseErr instanceof Error ? parseErr.message : String(parseErr)));
                             // Skip this match if XML parsing fails
                         }
                     }
                 }
             }
-
             // Sort matches by quality (highest semantic similarity first) and apply limit
             matches.sort((a, b) => b.quality - a.quality);
             return matches.slice(0, limit);
@@ -441,127 +360,16 @@ export class HybridTM {
         }
     }
 
-    // Compute hybrid score combining fuzzy and semantic similarity
-    private computeHybridScore(fuzzyScore: number, semanticScore: number, alpha: number): number {
-        const normalizedFuzzy: number = fuzzyScore / 100;
-        return alpha * normalizedFuzzy + (1 - alpha) * semanticScore;
+    private computeHybridScore(fuzzyScore: number, semanticScore: number): number {
+        const alpha: number = this.getOptimalAlpha(fuzzyScore);
+        return Math.round(alpha * fuzzyScore + (1 - alpha) * semanticScore);
     }
 
-    // Get optimal alpha value based on fuzzy score
     private getOptimalAlpha(fuzzyScore: number): number {
         if (fuzzyScore >= 90) return 0.85;      // 90-100: high weight on fuzzy
         if (fuzzyScore >= 70) return 0.65;      // 70-89: medium-high weight on fuzzy
         if (fuzzyScore >= 50) return 0.45;      // 50-69: balanced
         return 0.25;                            // < 50: high weight on semantic
-    }
-
-    async hybridTranslationSearch(searchStr: string, srcLang: string, tgtLang: string, similarity: number, caseSensitive: boolean, limit: number = 100): Promise<Array<Match>> {
-        try {
-            const table: Table = await this.ensureTable();
-
-            // Generate embedding for the search string once
-            const queryEmbedding: number[] = await this.generateEmbedding(searchStr);
-
-            // Get all entries for the source language
-            const sourceEntries: LangEntry[] = (await table
-                .query()
-                .where('language = ' + '\'' + srcLang + '\'')
-                .toArray()) as LangEntry[];
-
-            const matches: Array<Match> = [];
-
-            for (const sourceEntry of sourceEntries) {
-                if (!sourceEntry.pureText || !sourceEntry.vector) continue;
-
-                // Calculate fuzzy similarity using MatchQuality
-                const sourceText: string = caseSensitive ? sourceEntry.pureText : sourceEntry.pureText.toLowerCase();
-                const queryText: string = caseSensitive ? searchStr : searchStr.toLowerCase();
-                const fuzzyScore: number = MatchQuality.similarity(sourceText, queryText);
-
-                // Calculate semantic similarity using Manhattan distance
-                const semanticScore: number = this.manhattanSimilarity(queryEmbedding, sourceEntry.vector);
-
-                // Get optimal alpha based on fuzzy score
-                const alpha: number = this.getOptimalAlpha(fuzzyScore);
-
-                // Compute hybrid score
-                const hybridScore: number = this.computeHybridScore(fuzzyScore, semanticScore, alpha);
-                const hybridScorePercent: number = Math.round(hybridScore * 100);
-
-                // Only include matches that meet the minimum similarity threshold
-                if (hybridScorePercent >= similarity) {
-                    // Find corresponding target language entry for the same unit
-                    const targetEntryId: string = sourceEntry.fileId + ':' + sourceEntry.unitId + ':' + tgtLang;
-                    const targetEntries: LangEntry[] = (await table
-                        .query()
-                        .where('id = ' + '\'' + targetEntryId + '\'')
-                        .toArray()) as LangEntry[];
-
-                    if (targetEntries.length > 0) {
-                        const targetEntry: LangEntry = targetEntries[0];
-
-                        try {
-                            // Create XMLElements from stored strings
-                            const sourceElement: XMLElement = Utils.buildXMLElement(sourceEntry.element);
-                            const targetElement: XMLElement = Utils.buildXMLElement(targetEntry.element);
-
-                            // Create Match object with hybrid quality score
-                            const match: Match = new Match(
-                                sourceElement,
-                                targetElement,
-                                this.dbPath, // origin is the translation memory name
-                                hybridScorePercent
-                            );
-
-                            matches.push(match);
-                        } catch (parseErr: unknown) {
-                            console.error('Error creating XMLElements for hybrid match: ' + (parseErr instanceof Error ? parseErr.message : String(parseErr)));
-                            // Skip this match if XML parsing fails
-                        }
-                    }
-                }
-            }
-
-            // Sort matches by hybrid quality (highest first) and apply limit
-            matches.sort((a, b) => b.quality - a.quality);
-
-            return matches.slice(0, limit);
-        } catch (err: unknown) {
-            console.error('Error performing hybrid translation search:', err);
-            return [];
-        }
-    }
-
-    async textSearch(queryText: string, language: string, limit: number = 10): Promise<LangEntry[]> {
-        try {
-            if (!this.table) {
-                await this.initializeDatabase();
-            }
-
-            if (!this.table) {
-                throw new Error('Failed to initialize database table');
-            }
-
-            // Get all entries for the language and filter in JavaScript (more reliable for text search)
-            const allResults: LangEntry[] = (await this.table
-                .query()
-                .where('language = ' + '\'' + language + '\'')
-                .toArray()) as LangEntry[];
-
-            // Perform fuzzy text matching in JavaScript
-            const filteredResults: LangEntry[] = allResults.filter((row: LangEntry) => {
-                if (!row.pureText) return false;
-                const text: string = row.pureText.toLowerCase();
-                const query: string = queryText.toLowerCase();
-                return text.includes(query);
-            }).slice(0, limit);
-
-            return filteredResults as LangEntry[];
-
-        } catch (err: unknown) {
-            console.error('Error performing text search:', err);
-            return [];
-        }
     }
 
     // ============================
@@ -571,11 +379,7 @@ export class HybridTM {
     async storeLangEntry(fileId: string, original: string, unitId: string, lang: string, pureText: string, element: XMLElement, embeddings?: number[]): Promise<void> {
         try {
             const table: Table = await this.ensureTable();
-
-            // Generate deterministic ID based on fileId, unitId, and language
             const entryId: string = fileId + ':' + unitId + ':' + lang;
-
-            // Check if entry already exists and if content has changed
             const existingEntries: LangEntry[] = (await table
                 .query()
                 .where('id = ' + '\'' + entryId + '\'')
@@ -583,8 +387,6 @@ export class HybridTM {
 
             if (existingEntries.length > 0) {
                 const existingEntry: LangEntry = existingEntries[0];
-
-                // Compare content to see if it has changed
                 const contentChanged: boolean = (
                     existingEntry.pureText !== pureText ||
                     existingEntry.element !== element.toString() ||
@@ -592,7 +394,6 @@ export class HybridTM {
                 );
 
                 if (!contentChanged) {
-                    // Content is identical, skip update to avoid unnecessary work
                     return;
                 }
             }

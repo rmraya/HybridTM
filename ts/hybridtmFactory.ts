@@ -10,10 +10,10 @@
  *     Maxprograms - initial API and implementation
  *******************************************************************************/
 
-import { promises as fs } from "node:fs";
-import os from "node:os";
-import path from "node:path";
-import { HybridTM } from "./hybridtm";
+import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import os from 'node:os';
+import path from 'node:path';
+import { HybridTM } from './hybridtm';
 
 export interface HybridTMInstanceMetadata {
     name: string;
@@ -24,113 +24,76 @@ export interface HybridTMInstanceMetadata {
 
 export class HybridTMFactory {
 
-    private static readonly STORAGE_FILE_NAME: string = "instances.json";
+    private static readonly STORAGE_FILE_NAME: string = 'instances.json';
+    private static singleton: HybridTMFactory | null = null;
 
     private readonly storageDir: string;
     private readonly registryFile: string;
     private readonly registry: Map<string, HybridTMInstanceMetadata> = new Map<string, HybridTMInstanceMetadata>();
     private loaded: boolean = false;
-    private loadingPromise: Promise<void> | null = null;
 
-    constructor() {
+    private constructor() {
         this.storageDir = HybridTMFactory.resolveStorageDirectory();
         this.registryFile = path.join(this.storageDir, HybridTMFactory.STORAGE_FILE_NAME);
     }
 
-    async getWorkingDirectory(): Promise<string> {
-        await fs.mkdir(this.storageDir, { recursive: true });
-        return this.storageDir;
+    static listInstances(): HybridTMInstanceMetadata[] {
+        return HybridTMFactory.getSingleton().listInstancesInternal();
+    }
+
+    static createInstance(name: string, filePath: string, modelName: string): HybridTM {
+        return HybridTMFactory.getSingleton().createInstanceInternal(name, filePath, modelName);
+    }
+
+    static getInstance(name: string): HybridTM | undefined {
+        return HybridTMFactory.getSingleton().getInstanceInternal(name);
+    }
+
+    static removeInstance(name: string): void {
+        HybridTMFactory.getSingleton().removeInstanceInternal(name);
+    }
+
+    static getWorkingDirectory(): string {
+        return HybridTMFactory.getSingleton().getWorkingDirectoryInternal();
     }
 
     private static resolveStorageDirectory(): string {
         const platform: NodeJS.Platform = os.platform();
-        if (platform === "win32") {
+        if (platform === 'win32') {
             const appData: string | undefined = process.env.APPDATA;
             if (appData && appData.length > 0) {
-                return path.join(appData, "HybridTM");
+                return path.join(appData, 'HybridTM');
             }
-            return path.join(os.homedir(), "AppData", "Roaming", "HybridTM");
+            return path.join(os.homedir(), 'AppData', 'Roaming', 'HybridTM');
         }
-        if (platform === "darwin") {
-            return path.join(os.homedir(), "Library", "Application Support", "HybridTM");
+        if (platform === 'darwin') {
+            return path.join(os.homedir(), 'Library', 'Application Support', 'HybridTM');
         }
-        return path.join(os.homedir(), ".config", "HybridTM");
+        return path.join(os.homedir(), '.config', 'HybridTM');
     }
 
-    private async ensureLoaded(): Promise<void> {
-        if (this.loaded) {
-            return;
+    private static getSingleton(): HybridTMFactory {
+        if (!HybridTMFactory.singleton) {
+            HybridTMFactory.singleton = new HybridTMFactory();
         }
-        if (!this.loadingPromise) {
-            this.loadingPromise = this.loadRegistry();
-        }
-        await this.loadingPromise;
-        this.loaded = true;
+        return HybridTMFactory.singleton;
     }
 
-    private async loadRegistry(): Promise<void> {
-        await fs.mkdir(this.storageDir, { recursive: true });
-        try {
-            const raw: string = await fs.readFile(this.registryFile, "utf-8");
-            const data: unknown = JSON.parse(raw);
-            if (Array.isArray(data)) {
-                this.registry.clear();
-                for (const entry of data) {
-                    if (entry && typeof entry === "object") {
-                        const metadata: HybridTMInstanceMetadata | null = this.coerceMetadata(entry as Record<string, unknown>);
-                        if (metadata) {
-                            this.registry.set(metadata.name, metadata);
-                        }
-                    }
-                }
-            }
-        } catch (err: unknown) {
-            const nodeErr: NodeJS.ErrnoException = err as NodeJS.ErrnoException;
-            if (nodeErr.code === "ENOENT") {
-                this.registry.clear();
-                return;
-            }
-            throw err;
-        }
-    }
-
-    private coerceMetadata(entry: Record<string, unknown>): HybridTMInstanceMetadata | null {
-        const name: unknown = entry.name;
-        const filePath: unknown = entry.filePath;
-        const modelName: unknown = entry.modelName;
-        if (typeof name !== "string" || typeof filePath !== "string" || typeof modelName !== "string") {
-            return null;
-        }
-        const createdAt: string = typeof entry.createdAt === "string" ? entry.createdAt : new Date().toISOString();
-        return {
-            name,
-            filePath,
-            modelName,
-            createdAt
-        };
-    }
-
-    private async persistRegistry(): Promise<void> {
-        const serialized: string = JSON.stringify(Array.from(this.registry.values()), null, 2);
-        await fs.mkdir(this.storageDir, { recursive: true });
-        await fs.writeFile(this.registryFile, serialized, "utf-8");
-    }
-
-    async listInstances(): Promise<HybridTMInstanceMetadata[]> {
-        await this.ensureLoaded();
+    private listInstancesInternal(): HybridTMInstanceMetadata[] {
+        this.ensureLoaded();
         const entries: HybridTMInstanceMetadata[] = Array.from(this.registry.values()).map((metadata: HybridTMInstanceMetadata) => ({ ...metadata }));
         entries.sort((a: HybridTMInstanceMetadata, b: HybridTMInstanceMetadata) => a.name.localeCompare(b.name));
         return entries;
     }
 
-    async createInstance(name: string, filePath: string, modelName: string): Promise<HybridTM> {
+    private createInstanceInternal(name: string, filePath: string, modelName: string): HybridTM {
         const trimmedName: string = name.trim();
         if (trimmedName.length === 0) {
-            throw new Error("Friendly name must not be empty");
+            throw new Error('Name must not be empty');
         }
-        await this.ensureLoaded();
+        this.ensureLoaded();
         if (this.registry.has(trimmedName)) {
-            throw new Error("An instance with the provided name already exists");
+            throw new Error('An instance with the provided name already exists');
         }
         const resolvedPath: string = path.resolve(filePath);
         const now: string = new Date().toISOString();
@@ -140,36 +103,90 @@ export class HybridTMFactory {
             modelName,
             createdAt: now
         };
-        await fs.mkdir(resolvedPath, { recursive: true });
+        mkdirSync(resolvedPath, { recursive: true });
         this.registry.set(trimmedName, metadata);
-        await this.persistRegistry();
-        return new HybridTM(resolvedPath, modelName);
+        this.persistRegistry();
+        return new HybridTM(trimmedName, resolvedPath, modelName);
     }
 
-    async openInstance(name: string): Promise<HybridTM> {
-        await this.ensureLoaded();
+    private getInstanceInternal(name: string): HybridTM | undefined {
+        this.ensureLoaded();
         const metadata: HybridTMInstanceMetadata | undefined = this.registry.get(name);
         if (!metadata) {
-            throw new Error("Requested instance does not exist");
+            return undefined;
         }
-        const exists: boolean = await fs.stat(metadata.filePath).then(() => true).catch(() => false);
-        if (!exists) {
+        if (!existsSync(metadata.filePath)) {
             this.registry.delete(name);
-            await this.persistRegistry();
-            throw new Error("Stored database path was not found on disk");
+            this.persistRegistry();
+            return undefined;
         }
-        await this.persistRegistry();
-        return new HybridTM(metadata.filePath, metadata.modelName);
+        return new HybridTM(name, metadata.filePath, metadata.modelName);
     }
 
-    async removeInstance(name: string): Promise<void> {
-        await this.ensureLoaded();
+    private removeInstanceInternal(name: string): void {
+        this.ensureLoaded();
         const metadata: HybridTMInstanceMetadata | undefined = this.registry.get(name);
         if (!metadata) {
-            throw new Error("Requested instance does not exist");
+            throw new Error('Requested instance does not exist');
         }
         this.registry.delete(name);
-        await this.persistRegistry();
-        await fs.rm(metadata.filePath, { recursive: true, force: true });
+        this.persistRegistry();
+        rmSync(metadata.filePath, { recursive: true, force: true });
+    }
+
+    private getWorkingDirectoryInternal(): string {
+        mkdirSync(this.storageDir, { recursive: true });
+        return this.storageDir;
+    }
+
+    private ensureLoaded(): void {
+        if (this.loaded) {
+            return;
+        }
+        this.loadRegistry();
+        this.loaded = true;
+    }
+
+    private loadRegistry(): void {
+        mkdirSync(this.storageDir, { recursive: true });
+        if (!existsSync(this.registryFile)) {
+            this.registry.clear();
+            return;
+        }
+        const raw: string = readFileSync(this.registryFile, { encoding: 'utf-8' });
+        const data: unknown = JSON.parse(raw);
+        if (Array.isArray(data)) {
+            this.registry.clear();
+            for (const entry of data) {
+                if (entry && typeof entry === 'object') {
+                    const metadata: HybridTMInstanceMetadata | null = this.coerceMetadata(entry as Record<string, unknown>);
+                    if (metadata) {
+                        this.registry.set(metadata.name, metadata);
+                    }
+                }
+            }
+        }
+    }
+
+    private coerceMetadata(entry: Record<string, unknown>): HybridTMInstanceMetadata | null {
+        const name: unknown = entry.name;
+        const filePath: unknown = entry.filePath;
+        const modelName: unknown = entry.modelName;
+        if (typeof name !== 'string' || typeof filePath !== 'string' || typeof modelName !== 'string') {
+            return null;
+        }
+        const createdAt: string = typeof entry.createdAt === 'string' ? entry.createdAt : new Date().toISOString();
+        return {
+            name,
+            filePath,
+            modelName,
+            createdAt
+        };
+    }
+
+    private persistRegistry(): void {
+        const serialized: string = JSON.stringify(Array.from(this.registry.values()), null, 2);
+        mkdirSync(this.storageDir, { recursive: true });
+        writeFileSync(this.registryFile, serialized, { encoding: 'utf-8' });
     }
 }

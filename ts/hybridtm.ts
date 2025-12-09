@@ -196,19 +196,16 @@ export class HybridTM {
         try {
             const table: Table = await this.ensureTable();
 
-            // Step 1: Find all entries that contain the text fragment in the given language
-            const matchingEntries: LangEntry[] = (await table
-                .query()
-                .where('language = ' + '\'' + language + '\'')
-                .toArray()) as LangEntry[];
+            const escapeLiteral = (value: string): string => value.replace(/'/g, "''");
+            const escapedFragment: string = escapeLiteral(textFragment);
 
-            // Filter by text fragment in JavaScript (more reliable for text search)
-            const fragmentEntries: LangEntry[] = matchingEntries.filter((row: LangEntry) => {
-                if (!row.pureText) return false;
-                const text: string = row.pureText.toLowerCase();
-                const fragment: string = textFragment.toLowerCase();
-                return text.includes(fragment);
-            }).slice(0, limit);
+            // Step 1: Retrieve entries that already satisfy the text fragment search in the database
+            const whereFragment: string = 'language = ' + '\'' + language + '\'' + ' AND contains(pureText, ' + '\'' + escapedFragment + '\')';
+            const fragmentEntries: LangEntry[] = (await table
+                .query()
+                .where(whereFragment)
+                .limit(limit)
+                .toArray()) as LangEntry[];
 
             if (fragmentEntries.length === 0) {
                 return [];
@@ -226,16 +223,11 @@ export class HybridTM {
 
             for (const unitKey of uniqueUnits) {
                 const [fileId, unitId]: string[] = unitKey.split(':');
-
-                // Get all language variants for this unit using JavaScript filtering
-                // This is more reliable than LanceDB WHERE clauses for exact string matching
-                const allEntries: LangEntry[] = (await table
+                const unitIdPrefix: string = fileId + ':' + unitId + ':';
+                const allVariants: LangEntry[] = (await table
                     .query()
+                    .where('starts_with(id, ' + '\'' + escapeLiteral(unitIdPrefix) + '\')')
                     .toArray()) as LangEntry[];
-
-                const allVariants: LangEntry[] = allEntries.filter((entry: LangEntry) => {
-                    return entry.fileId === fileId && entry.unitId === unitId;
-                });
 
                 // Create a map of language -> XMLElement for this unit
                 const languageMap: Map<string, XMLElement> = new Map<string, XMLElement>();
@@ -254,6 +246,9 @@ export class HybridTM {
                 // Only add to result if we have at least one language variant
                 if (languageMap.size > 0) {
                     result.push(languageMap);
+                    if (result.length >= limit) {
+                        break;
+                    }
                 }
             }
             return result;
@@ -379,7 +374,9 @@ export class HybridTM {
     async storeLangEntry(fileId: string, original: string, unitId: string, lang: string, pureText: string, element: XMLElement, embeddings?: number[]): Promise<void> {
         try {
             const table: Table = await this.ensureTable();
-            const entryId: string = fileId + ':' + unitId + ':' + lang;
+            const sanitizedFileId: string = Utils.replaceQuotes(fileId);
+            const sanitizedUnitId: string = Utils.replaceQuotes(unitId);
+            const entryId: string = sanitizedFileId + ':' + sanitizedUnitId + ':' + lang;
             const existingEntries: LangEntry[] = (await table
                 .query()
                 .where('id = ' + '\'' + entryId + '\'')
@@ -411,9 +408,9 @@ export class HybridTM {
                 language: lang,
                 pureText: pureText,
                 element: element.toString(),
-                fileId: fileId,
+                fileId: sanitizedFileId,
                 original: original,
-                unitId: unitId,
+                unitId: sanitizedUnitId,
                 vector: vectorEmbeddings
             };
 
@@ -441,17 +438,19 @@ export class HybridTM {
 
             // Generate embeddings one by one and build LangEntry objects
             for (const entry of entries) {
+                const sanitizedFileId: string = Utils.replaceQuotes(entry.fileId);
+                const sanitizedUnitId: string = Utils.replaceQuotes(entry.unitId);
                 const vectorEmbeddings: number[] = await this.generateEmbedding(entry.pureText);
-                const entryId: string = entry.fileId + ':' + entry.unitId + ':' + entry.language;
+                const entryId: string = sanitizedFileId + ':' + sanitizedUnitId + ':' + entry.language;
 
                 const langEntry: LangEntry = {
                     id: entryId,
                     language: entry.language,
                     pureText: entry.pureText,
                     element: entry.element.toString(),
-                    fileId: entry.fileId,
+                    fileId: sanitizedFileId,
                     original: entry.original,
-                    unitId: entry.unitId,
+                    unitId: sanitizedUnitId,
                     vector: vectorEmbeddings
                 };
 
@@ -489,7 +488,7 @@ export class HybridTM {
                 throw new Error('Failed to initialize database table');
             }
 
-            const entryId: string = fileId + ':' + unitId + ':' + lang;
+            const entryId: string = Utils.replaceQuotes(fileId) + ':' + Utils.replaceQuotes(unitId) + ':' + lang;
             const existingEntries: LangEntry[] = (await this.table
                 .query()
                 .where('id = ' + '\'' + entryId + '\'')
@@ -513,7 +512,7 @@ export class HybridTM {
                 throw new Error('Failed to initialize database table');
             }
 
-            const entryId: string = fileId + ':' + unitId + ':' + lang;
+            const entryId: string = Utils.replaceQuotes(fileId) + ':' + Utils.replaceQuotes(unitId) + ':' + lang;
             const existingEntries: LangEntry[] = (await this.table
                 .query()
                 .where('id = ' + '\'' + entryId + '\'')
@@ -535,7 +534,7 @@ export class HybridTM {
                 throw new Error('Failed to initialize database table');
             }
 
-            const entryId: string = fileId + ':' + unitId + ':' + lang;
+            const entryId: string = Utils.replaceQuotes(fileId) + ':' + Utils.replaceQuotes(unitId) + ':' + lang;
 
             // Check if entry exists first
             const exists: boolean = await this.entryExists(fileId, unitId, lang);

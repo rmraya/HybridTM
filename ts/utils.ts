@@ -14,6 +14,10 @@ import { ContentHandler, DOMBuilder, SAXParser, TextNode, XMLElement, XMLNode, X
 
 export class Utils {
 
+    static replaceQuotes(value: string): string {
+        return value.replace(/'/g, "''");
+    }
+
     static getPureText(element: XMLElement): string {
         let text: string = '';
         let content: XMLNode[] = element.getContent();

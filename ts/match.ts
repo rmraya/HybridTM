@@ -17,13 +17,15 @@ export class Match {
     source: XMLElement;
     target: XMLElement;
     origin: string;
-    quality: number;
+    semantic: number;
+    fuzzy: number;
 
-    constructor(source: XMLElement, target: XMLElement, origin: string, quality: number) {
+    constructor(source: XMLElement, target: XMLElement, origin: string, semantic: number, fuzzy:number) {
         this.source = source;
         this.target = target;
         this.origin = origin;
-        this.quality = quality;
+        this.semantic = semantic;
+        this.fuzzy = fuzzy;
     }
 
     toJSON(): any {
@@ -31,8 +33,13 @@ export class Match {
             source: this.source.toString(),
             target: this.target.toString(),
             origin: this.origin,
-            quality: this.quality
+            semantic: this.semantic,
+            fuzzy: this.fuzzy
         }
+    }
+
+    hybridScore(): number {
+        return Math.round((this.semantic + this.fuzzy) / 2);
     }
 
 }

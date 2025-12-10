@@ -274,23 +274,6 @@ export class HybridTM {
         }
     }
 
-    private manhattanSimilarity(vecA: number[], vecB: number[]): number {
-        const a: number[] = Array.from(vecA);
-        const b: number[] = Array.from(vecB);
-
-        if (a.length !== b.length) {
-            throw new Error('Vectors must have the same length');
-        }
-
-        let sumAbsDiff: number = 0;
-        for (let i: number = 0; i < a.length; i++) {
-            sumAbsDiff += Math.abs(a[i] - b[i]);
-        }
-
-        // Convert to similarity using exponential decay (as percentage)
-        return Math.round(Math.exp(-sumAbsDiff / a.length) * 100);
-    }
-
     async semanticTranslationSearch(searchStr: string, srcLang: string, tgtLang: string, similarity: number, limit: number = 100): Promise<Array<Match>> {
         try {
             const table: Table = await this.ensureTable();
@@ -310,10 +293,11 @@ export class HybridTM {
                     continue;
                 }
 
-                // Calculate semantic similarity using Manhattan distance
-                const semanticScore: number = this.manhattanSimilarity(queryEmbedding, sourceEntry.vector);
+                // Linear mapping (more intuitive)
+                const l2Distance = sourceEntry._distance;
+                const semanticScore = Math.max(0, Math.round((2 - l2Distance) / 2 * 100));
                 const fuzzyScore: number = MatchQuality.similarity(searchStr, sourceEntry.pureText);
-                const hybridScore: number = this.computeHybridScore(fuzzyScore, semanticScore);
+                const hybridScore = Math.round((semanticScore + fuzzyScore) / 2);
 
                 // Only include matches that meet the minimum similarity threshold
                 if (hybridScore >= similarity) {
@@ -336,7 +320,8 @@ export class HybridTM {
                                 sourceElement,
                                 targetElement,
                                 this.name,
-                                hybridScore
+                                semanticScore,
+                                fuzzyScore
                             );
                             matches.push(match);
                         } catch (parseErr: unknown) {
@@ -346,25 +331,13 @@ export class HybridTM {
                     }
                 }
             }
-            // Sort matches by quality (highest semantic similarity first) and apply limit
-            matches.sort((a, b) => b.quality - a.quality);
+            // Sort matches by quality (highest hybrid similarity first) and apply limit
+            matches.sort((a, b) => b.hybridScore() - a.hybridScore());
             return matches.slice(0, limit);
         } catch (err: unknown) {
             console.error('Error performing semantic search with quality:', err);
             return [];
         }
-    }
-
-    private computeHybridScore(fuzzyScore: number, semanticScore: number): number {
-        const alpha: number = this.getOptimalAlpha(fuzzyScore);
-        return Math.round(alpha * fuzzyScore + (1 - alpha) * semanticScore);
-    }
-
-    private getOptimalAlpha(fuzzyScore: number): number {
-        if (fuzzyScore >= 90) return 0.85;      // 90-100: high weight on fuzzy
-        if (fuzzyScore >= 70) return 0.65;      // 70-89: medium-high weight on fuzzy
-        if (fuzzyScore >= 50) return 0.45;      // 50-69: balanced
-        return 0.25;                            // < 50: high weight on semantic
     }
 
     // ============================

@@ -11,13 +11,13 @@ A Translation Memory (TM) engine that combines traditional fuzzy matching with s
 ### Hybrid Search Technology
 
 - **MatchQuality Algorithm**: Improved fuzzy matching based on Longest Common Subsequence
-- **Semantic Similarity**: Manhattan distance calculation for semantic understanding  
-- **Adaptive Weighting**: Dynamic combination of fuzzy and semantic approaches
+- **Semantic Similarity**: L2 distance-based cosine similarity from vector search
+- **Balanced Scoring**: Average of fuzzy and semantic similarity scores
 - **Cross-linguistic Support**: Works across Latin, Cyrillic, Arabic, and CJK scripts
 
 ## Model Selection Guide
 
-HybridTM offers **three optimized models** for different use cases:
+HybridTM uses **Xenova transformer models** from Hugging Face's Transformers.js library. The system provides three pre-configured model constants for common use cases, but you can specify any compatible Xenova model by its ID:
 
 | Model | Pros | Cons |
 |-------|------|------|
@@ -31,24 +31,27 @@ HybridTM offers **three optimized models** for different use cases:
 | **Paraphrase-MPNet** (`Xenova/paraphrase-multilingual-mpnet-base-v2`) | Good multilingual balance, proven TM performance (768D) | Medium performance, moderate speed |
 | **DistilUSE-v2** (`Xenova/distiluse-base-multilingual-cased-v2`) | Improved efficiency, compact size (512D) | Limited availability, moderate quality |
 
-### Three Model Options
+**Note**: All models must be available in the Xenova/Transformers.js format. Models are automatically downloaded on first use and cached locally.
 
 ### Technical Capabilities
 
-- **Multilingual Embeddings**: Uses transformer-based semantic understanding
-- **Vector Database**: LanceDB for efficient similarity search
-- **XLIFF Integration**: Standard translation industry file format support
+- **Multilingual Embeddings**: Uses transformer-based semantic understanding with normalized vectors
+- **Vector Database**: LanceDB for efficient L2 distance-based similarity search
+- **XLIFF & TMX Import**: Standard translation industry file format support
 - **Concordance Search**: Text fragment matching across translation units
+- **Batch Import**: Efficient bulk entry processing with temporary JSONL files
 - **Duplicate Prevention**: Content change detection to avoid redundant entries
 - **Dynamic Dimensions**: Automatically detects model embedding dimensions
 
-## Performance Data
+## Scoring Approach
 
-| Search Method | Quality Score | Description |
-|--------------|---------------|-------------|
-| Hybrid Search | 96.1% | Combined fuzzy and semantic matching |
-| Semantic Only | 95.6% | Transformer-based similarity |
-| Fuzzy Only | 93.4% | Traditional string matching |
+HybridTM provides three quality metrics for each match:
+
+- **Semantic Score**: L2 distance-based similarity from vector search (0-100%)
+- **Fuzzy Score**: Longest Common Subsequence string matching (0-100%)
+- **Hybrid Score**: Simple average of semantic and fuzzy scores
+
+The hybrid score provides a balanced quality metric that requires both textual similarity and semantic relatedness, filtering out false positives where only one metric is high.
 
 ## Installation and Usage
 
@@ -65,13 +68,19 @@ npm install
 ### Basic Usage
 
 ```typescript
-import { HybridTM } from 'hybridtm';
+import { HybridTM, HybridTMFactory } from 'hybridtm';
+import { XMLElement } from 'typesxml';
 
-// Create and initialize a translation memory with your choice of model
-const tm = await HybridTM.getInstance('./my-tm.lancedb', HybridTM.QUALITY_MODEL);
+// Create a new translation memory instance
+const tm = HybridTMFactory.createInstance(
+    'myTM',                    // Instance name
+    './my-tm.lancedb',        // Database path
+    HybridTM.QUALITY_MODEL    // Model selection
+);
 
-// Import XLIFF files to populate the TM
-tm.importXLIFF('./translations/project1.xlf');
+// Import XLIFF or TMX files to populate the TM
+await tm.importXLIFF('./translations/project1.xlf');
+await tm.importTMX('./translations/memory.tmx');
 
 // Or manually store translation pairs
 await tm.storeLangEntry(
@@ -83,19 +92,28 @@ await tm.storeLangEntry(
     xmlElement       // XML element
 );
 
-// Search for translations using hybrid approach (fuzzy + semantic)
-const matches = await tm.hybridTranslationSearch(
+// Search for translations (returns fuzzy + semantic scores)
+const matches = await tm.semanticTranslationSearch(
     'Hello universe',  // Query text
     'en',             // Source language
     'fr',             // Target language
-    50,               // Minimum quality threshold (0-100)
-    false,            // Case sensitive
-    5                 // Maximum results
+    60,               // Minimum hybrid score threshold (0-100)
+    10                // Maximum results
 );
 
-// Process results
+// Process results - each match has three quality metrics
 matches.forEach(match => {
-    console.log(`${match.quality}% match: ${match.target.toString()}`);
+    console.log(`Hybrid: ${match.hybridScore()}%, Semantic: ${match.semantic}%, Fuzzy: ${match.fuzzy}%`);
+    console.log(`Source: ${match.source.toString()}`);
+    console.log(`Target: ${match.target.toString()}`);
+});
+
+// Concordance search for text fragments
+const concordance = await tm.concordanceSearch('Hello', 'en', 5);
+concordance.forEach(langMap => {
+    for (const [lang, element] of langMap) {
+        console.log(`${lang}: ${element.toString()}`);
+    }
 });
 
 await tm.close();
@@ -104,19 +122,24 @@ await tm.close();
 ### Model Selection
 
 ```typescript
+import { HybridTM, HybridTMFactory } from 'hybridtm';
+
 // Choose the model that fits your needs:
 
 // For real-time CAT tools (fastest)
-const speedTM = await HybridTM.getInstance('./tm.lancedb', HybridTM.SPEED_MODEL);
+const speedTM = HybridTMFactory.createInstance('speed', './tm.lancedb', HybridTM.SPEED_MODEL);
 
 // For maximum accuracy (default, recommended)
-const qualityTM = await HybridTM.getInstance('./tm.lancedb', HybridTM.QUALITY_MODEL);
+const qualityTM = HybridTMFactory.createInstance('quality', './tm.lancedb', HybridTM.QUALITY_MODEL);
 
 // For resource-constrained environments
-const resourceTM = await HybridTM.getInstance('./tm.lancedb', HybridTM.RESOURCE_MODEL);
+const resourceTM = HybridTMFactory.createInstance('resource', './tm.lancedb', HybridTM.RESOURCE_MODEL);
 
-// Use any alternative model by ID
-const customTM = await HybridTM.getInstance('./tm.lancedb', 'Xenova/bge-m3');
+// Use any compatible Xenova model by its Hugging Face ID
+const customTM = HybridTMFactory.createInstance('custom', './tm.lancedb', 'Xenova/bge-m3');
+
+// Retrieve an existing instance by name
+const existingTM = HybridTMFactory.getInstance('quality');
 ```
 
 ### Model Constants
@@ -133,11 +156,11 @@ HybridTM.RESOURCE_MODEL // 'Xenova/multilingual-e5-small' - Minimal hardware
 ```typescript
 try {
     // If model doesn't exist or can't be loaded, initialization will fail
-    const tm = await HybridTM.getInstance('./db.lancedb', 'Xenova/nonexistent-model');
+    const tm = HybridTMFactory.createInstance('test', './db.lancedb', 'Xenova/nonexistent-model');
 } catch (error) {
     console.error('Model initialization failed:', error.message);
     // Use a working model instead
-    const fallbackTM = await HybridTM.getInstance('./db.lancedb', HybridTM.QUALITY_MODEL);
+    const fallbackTM = HybridTMFactory.createInstance('test', './db.lancedb', HybridTM.QUALITY_MODEL);
 }
 ```
 
@@ -146,9 +169,9 @@ try {
 ### Core Technologies
 
 - **Vector Database**: LanceDB for efficient similarity search
-- **Embedding Model**: Multilingual transformer (BAAI/bge-m3)
+- **Embedding Model**: Xenova transformer models (default: Xenova/LaBSE)
 - **Fuzzy Algorithm**: MatchQuality with Longest Common Subsequence
-- **Semantic Algorithm**: Manhattan distance with 97% correlation to cosine
+- **Semantic Algorithm**: L2 distance-based cosine similarity from vector search
 - **File Format**: XLIFF standard with complete metadata preservation
 
 ## Language Support
@@ -250,7 +273,6 @@ git clone https://github.com/rmraya/HybridTM.git
 cd HybridTM
 npm install
 npm run build
-npm test
 ```
 
 ### Contributing

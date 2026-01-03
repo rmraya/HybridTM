@@ -69,7 +69,7 @@ npm install
 
 ```typescript
 import { HybridTM, HybridTMFactory } from 'hybridtm';
-import { XMLElement } from 'typesxml';
+import { XMLElement } from "typesxml"';
 
 // Create a new translation memory instance
 const tm = HybridTMFactory.createInstance(

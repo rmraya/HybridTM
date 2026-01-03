@@ -1,5 +1,5 @@
 /*******************************************************************************
- * Copyright (c) 2025 Maxprograms.
+ * Copyright (c) 2025-2026 Maxprograms.
  *
  * This program and the accompanying materials
  * are made available under the terms of the Eclipse   License 1.0
@@ -10,17 +10,17 @@
  *     Maxprograms - initial API and implementation
  *******************************************************************************/
 
-export { BatchImporter } from "./batchImporter";
-export { Constants } from "./constants";
-export { HybridTM } from "./hybridtm";
-export { HybridTMFactory, HybridTMInstanceMetadata } from "./hybridtmFactory";
-export { LangEntry } from "./langEntry";
-export { Match } from "./match";
-export { MatchQuality } from "./matchQuality";
-export { PendingEntry } from "./pendingEntry";
-export { TMXHandler } from "./tmxHandler";
-export { TMXReader } from "./tmxReader";
-export { Utils } from "./utils";
-export { XLIFFHandler } from "./xliffHandler";
-export { XLIFFReader } from "./xliffReader";
+export { BatchImporter } from './batchImporter.js';
+export { Constants } from './constants.js';
+export { HybridTM } from './hybridtm.js';
+export { HybridTMFactory, HybridTMInstanceMetadata } from './hybridtmFactory.js';
+export { LangEntry } from './langEntry.js';
+export { Match } from './match.js';
+export { MatchQuality } from './matchQuality.js';
+export { PendingEntry } from './pendingEntry.js';
+export { TMXHandler } from './tmxHandler.js';
+export { TMXReader } from './tmxReader.js';
+export { Utils } from './utils.js';
+export { XLIFFHandler } from './xliffHandler.js';
+export { XLIFFReader } from './xliffReader.js';
 

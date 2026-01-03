@@ -1,5 +1,5 @@
 /*******************************************************************************
- * Copyright (c) 2025 Maxprograms.
+ * Copyright (c) 2025-2026 Maxprograms.
  *
  * This program and the accompanying materials
  * are made available under the terms of the Eclipse   License 1.0
@@ -10,10 +10,10 @@
  *     Maxprograms - initial API and implementation
  *******************************************************************************/
 
-import { tmpdir } from 'node:os';
+import { tmpdir } from "node:os";
 import { join } from 'node:path';
-import { SAXParser } from "typesxml/dist";
-import { XLIFFHandler } from "./xliffHandler";
+import { SAXParser } from "typesxml";
+import { XLIFFHandler } from './xliffHandler.js';
 
 export class XLIFFReader {
 

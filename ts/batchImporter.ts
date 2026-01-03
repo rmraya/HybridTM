@@ -1,5 +1,5 @@
 /*******************************************************************************
- * Copyright (c) 2025 Maxprograms.
+ * Copyright (c) 2025-2026 Maxprograms.
  *
  * This program and the accompanying materials
  * are made available under the terms of the Eclipse   License 1.0
@@ -10,11 +10,11 @@
  *     Maxprograms - initial API and implementation
  *******************************************************************************/
 
-import { createReadStream, existsSync, unlinkSync, ReadStream } from 'node:fs';
+import { createReadStream, existsSync, unlinkSync, ReadStream } from "node:fs";
 import { createInterface, Interface } from 'node:readline';
-import { HybridTM } from './hybridtm';
-import { PendingEntry } from './pendingEntry';
-import { Utils } from './utils';
+import { HybridTM } from './hybridtm.js';
+import { PendingEntry } from './pendingEntry.js';
+import { Utils } from './utils.js';
 
 export class BatchImporter {
     private tm: HybridTM;

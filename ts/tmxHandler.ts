@@ -1,5 +1,5 @@
 /*******************************************************************************
- * Copyright (c) 2025 Maxprograms.
+ * Copyright (c) 2025-2026 Maxprograms.
  *
  * This program and the accompanying materials
  * are made available under the terms of the Eclipse   License 1.0
@@ -10,9 +10,9 @@
  *     Maxprograms - initial API and implementation
  *******************************************************************************/
 
-import { Catalog, CData, ContentHandler, Grammar, TextNode, XMLAttribute, XMLElement } from "typesxml/dist";
-import { Utils } from "./utils";
-import { createWriteStream, WriteStream } from 'node:fs';
+import { createWriteStream, WriteStream } from "node:fs";
+import { Catalog, CData, ContentHandler, Grammar, TextNode, XMLAttribute, XMLElement } from "typesxml";
+import { Utils } from './utils.js';
 
 export class TMXHandler implements ContentHandler {
 

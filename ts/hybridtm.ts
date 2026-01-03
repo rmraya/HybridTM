@@ -1,5 +1,5 @@
 /*******************************************************************************
- * Copyright (c) 2025 Maxprograms.
+ * Copyright (c) 2025-2026 Maxprograms.
  *
  * This program and the accompanying materials
  * are made available under the terms of the Eclipse   License 1.0
@@ -14,14 +14,14 @@ import { connect, Connection, Table } from "@lancedb/lancedb";
 import { FeatureExtractionPipeline, pipeline, Tensor } from "@xenova/transformers";
 import { Field, FixedSizeList, Float32, Schema, Utf8 } from "apache-arrow";
 import { XMLElement } from "typesxml";
-import { BatchImporter } from "./batchImporter";
-import { LangEntry } from "./langEntry";
-import { Match } from "./match";
-import { MatchQuality } from "./matchQuality";
-import { PendingEntry } from "./pendingEntry";
-import { TMXReader } from "./tmxReader";
-import { Utils } from "./utils";
-import { XLIFFReader } from "./xliffReader";
+import { BatchImporter } from './batchImporter.js';
+import { LangEntry } from './langEntry.js';
+import { Match } from './match.js';
+import { MatchQuality } from './matchQuality.js';
+import { PendingEntry } from './pendingEntry.js';
+import { TMXReader } from './tmxReader.js';
+import { Utils } from './utils.js';
+import { XLIFFReader } from './xliffReader.js';
 
 export class HybridTM {
 

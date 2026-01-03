@@ -1,5 +1,5 @@
 /*******************************************************************************
- * Copyright (c) 2025 Maxprograms.
+ * Copyright (c) 2025-2026 Maxprograms.
  *
  * This program and the accompanying materials
  * are made available under the terms of the Eclipse   License 1.0
@@ -11,9 +11,9 @@
  *******************************************************************************/
 
 import { basename, join } from 'node:path';
-import { tmpdir } from 'node:os';
-import { SAXParser } from "typesxml/dist";
-import { TMXHandler } from "./tmxHandler";
+import { tmpdir } from "node:os";
+import { SAXParser } from "typesxml";
+import { TMXHandler } from './tmxHandler.js';
 
 export class TMXReader {
 

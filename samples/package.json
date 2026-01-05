@@ -1,0 +1,19 @@
+{
+  "name": "hybridtm-samples",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "build": "tsc",
+    "dev:basic": "node ./dist/basicWorkflow.js",
+    "dev:import": "node ./dist/importFiles.js",
+    "dev:filters": "node ./dist/metadataFilters.js"
+  },
+  "dependencies": {
+    "hybridtm": "file:.."
+  },
+  "devDependencies": {
+    "ts-node": "^10.9.2",
+    "typescript": "^5.9.3"
+  }
+}

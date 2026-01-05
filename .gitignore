@@ -1,10 +1,10 @@
 .DS_Store
-package-lock.json
-node_modules/
-dist/
+.github/
 .vscode/
 .scannerwork/
+dist/
 models/
+node_modules/
 data/
 *.lancedb/
 ts/xlifftest.ts

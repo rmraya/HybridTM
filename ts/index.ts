@@ -11,16 +11,16 @@
  *******************************************************************************/
 
 export { BatchImporter } from './batchImporter.js';
-export { Constants } from './constants.js';
 export { HybridTM } from './hybridtm.js';
 export { HybridTMFactory, HybridTMInstanceMetadata } from './hybridtmFactory.js';
-export { LangEntry } from './langEntry.js';
+export type { TranslationState } from './importOptions.js';
+export { LangEntry, SearchResult } from './langEntry.js';
 export { Match } from './match.js';
 export { MatchQuality } from './matchQuality.js';
 export { PendingEntry } from './pendingEntry.js';
+export type { MetadataFilter, TranslationSearchFilters } from './searchFilters.js';
 export { TMXHandler } from './tmxHandler.js';
 export { TMXReader } from './tmxReader.js';
 export { Utils } from './utils.js';
 export { XLIFFHandler } from './xliffHandler.js';
 export { XLIFFReader } from './xliffReader.js';
-

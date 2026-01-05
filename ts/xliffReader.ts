@@ -13,6 +13,7 @@
 import { tmpdir } from "node:os";
 import { join } from 'node:path';
 import { SAXParser } from "typesxml";
+import { DEFAULT_IMPORT_OPTIONS, ImportOptions, ResolvedImportOptions, resolveImportOptions } from './importOptions.js';
 import { XLIFFHandler } from './xliffHandler.js';
 
 export class XLIFFReader {
@@ -21,33 +22,29 @@ export class XLIFFReader {
     tempFilePath: string;
     handler: XLIFFHandler;
     filePath: string;
-    
-    constructor(filePath: string) {
+    private readonly options: ResolvedImportOptions;
+
+    constructor(filePath: string, options: ImportOptions = DEFAULT_IMPORT_OPTIONS) {
         this.filePath = filePath;
-        
+        this.options = resolveImportOptions(options);
+
         // Generate temp file path
         const tempDir = tmpdir();
         const tempFileName = 'xliff_' + Date.now() + '_' + Math.random().toString(36).substring(7) + '.jsonl';
         this.tempFilePath = join(tempDir, tempFileName);
-        
+
         this.parser = new SAXParser();
-        this.handler = new XLIFFHandler(this.tempFilePath);
+        this.handler = new XLIFFHandler(this.tempFilePath, this.options);
         this.parser.setContentHandler(this.handler);
     }
 
     async parse(): Promise<void> {
-        return new Promise<void>((resolve, reject) => {
-            // Wait for the handler to signal completion
-            this.handler.onComplete(() => {
-                resolve();
-            });
-            
-            try {
-                this.parser.parseFile(this.filePath);
-            } catch (error: unknown) {
-                reject(error instanceof Error ? error : new Error(String(error)));
-            }
-        });
+        try {
+            this.parser.parseFile(this.filePath);
+            await this.handler.waitForCompletion();
+        } catch (error: unknown) {
+            throw error instanceof Error ? error : new Error(String(error));
+        }
     }
 
     getTempFilePath(): string {

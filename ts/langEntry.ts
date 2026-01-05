@@ -10,14 +10,59 @@
  *     Maxprograms - initial API and implementation
  *******************************************************************************/
 
+export interface SegmentMetadata {
+    provider?: string;
+    fileHash?: string;
+    fileId?: string;
+    unitId?: string;
+    segmentId?: string;
+    segmentIndex?: number;
+    segmentCount?: number;
+    segmentKey?: string;
+}
+
+export interface EntryMetadata {
+    state?: 'initial' | 'translated' | 'reviewed' | 'final';
+    subState?: string;
+    quality?: number;
+    creationDate?: string;
+    creationId?: string;
+    changeDate?: string;
+    changeId?: string;
+    creationTool?: string;
+    creationToolVersion?: string;
+    context?: string;
+    notes?: string[];
+    usageCount?: number;
+    lastUsageDate?: string;
+    properties?: Record<string, string>;
+    segment?: SegmentMetadata;
+}
+
 export interface LangEntry {
-    id: string; // String ID for better LanceDB key compatibility
+    id: string;
     language: string;
     pureText: string;
     element: string;
     fileId: string;
     original: string;
     unitId: string;
-    vector: number[]; // Vector embeddings (384/512/768-dimensional based on model)
-    [key: string]: any; // Index signature for LanceDB compatibility
+    vector: number[];
+    segmentIndex: number;
+    segmentCount: number;
+    metadata: EntryMetadata;
+    [key: string]: unknown;
+}
+
+export interface SearchResult {
+    id: string;
+    language: string;
+    pureText: string;
+    element: string;
+    fileId: string;
+    original: string;
+    unitId: string;
+    segmentIndex: number;
+    segmentCount: number;
+    metadata: EntryMetadata;
 }

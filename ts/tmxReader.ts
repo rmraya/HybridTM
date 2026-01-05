@@ -10,9 +10,10 @@
  *     Maxprograms - initial API and implementation
  *******************************************************************************/
 
-import { basename, join } from 'node:path';
 import { tmpdir } from "node:os";
+import { basename, join } from 'node:path';
 import { SAXParser } from "typesxml";
+import { DEFAULT_IMPORT_OPTIONS, ImportOptions, ResolvedImportOptions, resolveImportOptions } from './importOptions.js';
 import { TMXHandler } from './tmxHandler.js';
 
 export class TMXReader {
@@ -21,33 +22,30 @@ export class TMXReader {
     filePath: string;
     handler: TMXHandler;
     jsonlTempPath: string;
+    private readonly options: ResolvedImportOptions;
 
-    constructor(filePath: string) {
+    constructor(filePath: string, options: ImportOptions = DEFAULT_IMPORT_OPTIONS) {
         this.filePath = filePath;
+        this.options = resolveImportOptions(options);
         const filename = basename(filePath);
-        
+
         // Generate temp file path for the JSONL output
         const tempDir = tmpdir();
         const tempFileName = 'tmx_' + Date.now() + '_' + Math.random().toString(36).substring(7) + '.jsonl';
         this.jsonlTempPath = join(tempDir, tempFileName);
-        
+
         this.parser = new SAXParser();
-        this.handler = new TMXHandler(this.jsonlTempPath, filename);
+        this.handler = new TMXHandler(this.jsonlTempPath, filename, this.options);
         this.parser.setContentHandler(this.handler);
     }
 
     async parse(): Promise<void> {
-        return new Promise<void>((resolve, reject) => {
-            try {
-                // Wait for the handler to signal completion
-                this.handler.onComplete(() => {
-                    resolve();
-                });
-                this.parser.parseFile(this.filePath);
-            } catch (error: unknown) {
-                reject(error instanceof Error ? error : new Error(String(error)));
-            }
-        });
+        try {
+            this.parser.parseFile(this.filePath);
+            await this.handler.waitForCompletion();
+        } catch (error: unknown) {
+            throw error instanceof Error ? error : new Error(String(error));
+        }
     }
 
     getTempFilePath(): string {

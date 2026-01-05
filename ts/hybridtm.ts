@@ -10,15 +10,17 @@
  *     Maxprograms - initial API and implementation
  *******************************************************************************/
 
-import { connect, Connection, Table } from "@lancedb/lancedb";
-import { FeatureExtractionPipeline, pipeline, Tensor } from "@xenova/transformers";
-import { Field, FixedSizeList, Float32, Schema, Utf8 } from "apache-arrow";
-import { XMLElement } from "typesxml";
+import { connect, Connection, Table } from '@lancedb/lancedb';
+import { FeatureExtractionPipeline, pipeline, Tensor } from '@xenova/transformers';
+import { Field, FixedSizeList, Float32, Int32, Schema, Utf8 } from 'apache-arrow';
+import { XMLElement } from 'typesxml';
 import { BatchImporter } from './batchImporter.js';
-import { LangEntry } from './langEntry.js';
+import { ImportOptions, resolveImportOptions, TranslationState } from './importOptions.js';
+import { EntryMetadata, LangEntry, SearchResult, SegmentMetadata } from './langEntry.js';
 import { Match } from './match.js';
 import { MatchQuality } from './matchQuality.js';
 import { PendingEntry } from './pendingEntry.js';
+import { MetadataFilter, TranslationSearchFilters } from './searchFilters.js';
 import { TMXReader } from './tmxReader.js';
 import { Utils } from './utils.js';
 import { XLIFFReader } from './xliffReader.js';
@@ -98,14 +100,31 @@ export class HybridTM {
 
                 // Create Arrow schema for the langEntry table
                 const schema: Schema = new Schema([
-                    Field.new('id', new Utf8(), false),           // String ID for LanceDB compatibility
-                    Field.new('language', new Utf8(), false),     // Language code
-                    Field.new('pureText', new Utf8(), false),     // Plain text content
-                    Field.new('element', new Utf8(), false),      // XML element as string
-                    Field.new('fileId', new Utf8(), false),       // File identifier
-                    Field.new('original', new Utf8(), false),     // Original file name
-                    Field.new('unitId', new Utf8(), false),       // Translation unit ID
-                    Field.new('vector', new FixedSizeList(dimensions, Field.new('item', new Float32(), false)), false), // Vector embeddings with dynamic dimensions
+                    Field.new('id', new Utf8(), false),
+                    Field.new('language', new Utf8(), false),
+                    Field.new('pureText', new Utf8(), false),
+                    Field.new('element', new Utf8(), false),
+                    Field.new('fileId', new Utf8(), false),
+                    Field.new('original', new Utf8(), false),
+                    Field.new('unitId', new Utf8(), false),
+                    Field.new('segmentIndex', new Int32(), false),
+                    Field.new('segmentCount', new Int32(), false),
+                    Field.new('metadataState', new Utf8(), true),
+                    Field.new('metadataSubState', new Utf8(), true),
+                    Field.new('metadataQuality', new Int32(), true),
+                    Field.new('metadataCreationDate', new Utf8(), true),
+                    Field.new('metadataCreationId', new Utf8(), true),
+                    Field.new('metadataChangeDate', new Utf8(), true),
+                    Field.new('metadataChangeId', new Utf8(), true),
+                    Field.new('metadataCreationTool', new Utf8(), true),
+                    Field.new('metadataCreationToolVersion', new Utf8(), true),
+                    Field.new('metadataContext', new Utf8(), true),
+                    Field.new('metadataNotes', new Utf8(), true),
+                    Field.new('metadataUsageCount', new Int32(), true),
+                    Field.new('metadataLastUsageDate', new Utf8(), true),
+                    Field.new('metadataProperties', new Utf8(), true),
+                    Field.new('metadataSegment', new Utf8(), true),
+                    Field.new('vector', new FixedSizeList(dimensions, Field.new('item', new Float32(), false)), false),
                 ]);
 
                 // Create table with the schema
@@ -177,6 +196,241 @@ export class HybridTM {
         return this.table;
     }
 
+    private hydrateEntries(rows: unknown[]): LangEntry[] {
+        if (!Array.isArray(rows)) {
+            return [];
+        }
+        return rows.map((row: unknown) => this.hydrateEntry((row ?? {}) as Record<string, unknown>));
+    }
+
+    private hydrateEntry(row: Record<string, unknown>): LangEntry {
+        const metadata: EntryMetadata = this.unflattenMetadata(row);
+        const vectorData: unknown = row.vector;
+        const vector: number[] = Array.isArray(vectorData)
+            ? vectorData as number[]
+            : ArrayBuffer.isView(vectorData)
+                ? Array.from(vectorData as unknown as Iterable<number>)
+                : typeof vectorData === 'object' && vectorData !== null && typeof (vectorData as { toArray?: () => unknown }).toArray === 'function'
+                    ? Array.from(((vectorData as { toArray: () => unknown }).toArray() as unknown as Iterable<number>))
+                    : [];
+        const hydrated: Record<string, unknown> = { ...row };
+        hydrated.id = typeof row.id === 'string' ? row.id : '';
+        hydrated.language = typeof row.language === 'string' ? row.language : '';
+        hydrated.pureText = typeof row.pureText === 'string' ? row.pureText : '';
+        hydrated.element = typeof row.element === 'string' ? row.element : '';
+        hydrated.fileId = typeof row.fileId === 'string' ? row.fileId : '';
+        hydrated.original = typeof row.original === 'string' ? row.original : '';
+        hydrated.unitId = typeof row.unitId === 'string' ? row.unitId : '';
+        hydrated.vector = vector;
+        hydrated.segmentIndex = this.parseNumber(row.segmentIndex, 0);
+        hydrated.segmentCount = this.parseNumber(row.segmentCount, 1);
+        hydrated.metadata = metadata;
+        return hydrated as LangEntry;
+    }
+
+    private flattenEntry(entry: LangEntry): Record<string, unknown> {
+        const metadataFields: Record<string, unknown> = this.flattenMetadata(entry.metadata);
+        return {
+            id: entry.id,
+            language: entry.language,
+            pureText: entry.pureText,
+            element: entry.element,
+            fileId: entry.fileId,
+            original: entry.original,
+            unitId: entry.unitId,
+            segmentIndex: entry.segmentIndex,
+            segmentCount: entry.segmentCount,
+            vector: entry.vector,
+            ...metadataFields,
+        };
+    }
+
+    private mapToSearchResult(entry: LangEntry): SearchResult {
+        if (!entry.metadata) {
+            entry.metadata = {};
+        }
+        return {
+            id: entry.id,
+            language: entry.language,
+            pureText: entry.pureText,
+            element: entry.element,
+            fileId: entry.fileId,
+            original: entry.original,
+            unitId: entry.unitId,
+            segmentIndex: entry.segmentIndex,
+            segmentCount: entry.segmentCount,
+            metadata: entry.metadata,
+        };
+    }
+
+    private buildEntryId(fileId: string, unitId: string, segmentIndex: number, lang: string): string {
+        return fileId + ':' + unitId + ':' + segmentIndex + ':' + lang;
+    }
+
+    private flattenMetadata(metadata: EntryMetadata | undefined): Record<string, unknown> {
+        const safeMetadata: EntryMetadata = metadata ? metadata : {};
+        return {
+            metadataState: safeMetadata.state ?? null,
+            metadataSubState: safeMetadata.subState ?? null,
+            metadataQuality: typeof safeMetadata.quality === 'number' ? safeMetadata.quality : null,
+            metadataCreationDate: safeMetadata.creationDate ?? null,
+            metadataCreationId: safeMetadata.creationId ?? null,
+            metadataChangeDate: safeMetadata.changeDate ?? null,
+            metadataChangeId: safeMetadata.changeId ?? null,
+            metadataCreationTool: safeMetadata.creationTool ?? null,
+            metadataCreationToolVersion: safeMetadata.creationToolVersion ?? null,
+            metadataContext: safeMetadata.context ?? null,
+            metadataNotes: safeMetadata.notes ? JSON.stringify(safeMetadata.notes) : null,
+            metadataUsageCount: typeof safeMetadata.usageCount === 'number' ? safeMetadata.usageCount : null,
+            metadataLastUsageDate: safeMetadata.lastUsageDate ?? null,
+            metadataProperties: safeMetadata.properties ? JSON.stringify(safeMetadata.properties) : null,
+            metadataSegment: safeMetadata.segment ? JSON.stringify(safeMetadata.segment) : null,
+        };
+    }
+
+    private unflattenMetadata(row: Record<string, unknown>): EntryMetadata {
+        const metadata: EntryMetadata = {};
+        const str = (value: unknown): string | undefined => {
+            if (typeof value === 'string' && value.length > 0) {
+                return value;
+            }
+            return undefined;
+        };
+        const num = (value: unknown): number | undefined => {
+            if (typeof value === 'number' && !Number.isNaN(value)) {
+                return value;
+            }
+            if (typeof value === 'string' && value.length > 0) {
+                const parsed: number = Number(value);
+                if (!Number.isNaN(parsed)) {
+                    return parsed;
+                }
+            }
+            return undefined;
+        };
+        const stateValue: string | undefined = str(row.metadataState);
+        if (stateValue === 'initial' || stateValue === 'translated' || stateValue === 'reviewed' || stateValue === 'final') {
+            metadata.state = stateValue;
+        }
+        const subStateValue: string | undefined = str(row.metadataSubState);
+        if (subStateValue) {
+            metadata.subState = subStateValue;
+        }
+        const qualityValue: number | undefined = num(row.metadataQuality);
+        if (qualityValue !== undefined) {
+            metadata.quality = qualityValue;
+        }
+        const creationDateValue: string | undefined = str(row.metadataCreationDate);
+        if (creationDateValue) {
+            metadata.creationDate = creationDateValue;
+        }
+        const creationIdValue: string | undefined = str(row.metadataCreationId);
+        if (creationIdValue) {
+            metadata.creationId = creationIdValue;
+        }
+        const changeDateValue: string | undefined = str(row.metadataChangeDate);
+        if (changeDateValue) {
+            metadata.changeDate = changeDateValue;
+        }
+        const changeIdValue: string | undefined = str(row.metadataChangeId);
+        if (changeIdValue) {
+            metadata.changeId = changeIdValue;
+        }
+        const creationToolValue: string | undefined = str(row.metadataCreationTool);
+        if (creationToolValue) {
+            metadata.creationTool = creationToolValue;
+        }
+        const creationToolVersionValue: string | undefined = str(row.metadataCreationToolVersion);
+        if (creationToolVersionValue) {
+            metadata.creationToolVersion = creationToolVersionValue;
+        }
+        const contextValue: string | undefined = str(row.metadataContext);
+        if (contextValue) {
+            metadata.context = contextValue;
+        }
+        const notesValue: string[] | undefined = this.parseNotes(row.metadataNotes);
+        if (notesValue && notesValue.length > 0) {
+            metadata.notes = notesValue;
+        }
+        const usageCountValue: number | undefined = num(row.metadataUsageCount);
+        if (usageCountValue !== undefined) {
+            metadata.usageCount = usageCountValue;
+        }
+        const lastUsageDateValue: string | undefined = str(row.metadataLastUsageDate);
+        if (lastUsageDateValue) {
+            metadata.lastUsageDate = lastUsageDateValue;
+        }
+        const properties: Record<string, string> | undefined = this.parseProperties(row.metadataProperties);
+        if (properties && Object.keys(properties).length > 0) {
+            metadata.properties = properties;
+        }
+        const segment: SegmentMetadata | undefined = this.parseSegment(row.metadataSegment);
+        if (segment) {
+            metadata.segment = segment;
+        }
+        return metadata;
+    }
+
+    private parseNotes(value: unknown): string[] | undefined {
+        if (typeof value !== 'string' || value.length === 0) {
+            return undefined;
+        }
+        try {
+            const parsed: unknown = JSON.parse(value);
+            if (Array.isArray(parsed)) {
+                return parsed.filter((item: unknown): item is string => typeof item === 'string');
+            }
+        } catch {
+            return undefined;
+        }
+        return undefined;
+    }
+
+    private parseSegment(value: unknown): SegmentMetadata | undefined {
+        if (typeof value !== 'string' || value.length === 0) {
+            return undefined;
+        }
+        try {
+            const parsed: unknown = JSON.parse(value);
+            if (parsed && typeof parsed === 'object') {
+                return parsed as SegmentMetadata;
+            }
+        } catch (err) {
+            console.warn('Failed to parse metadata.segment:', err);
+        }
+        return undefined;
+    }
+
+    private parseProperties(value: unknown): Record<string, string> | undefined {
+        if (typeof value !== 'string' || value.length === 0) {
+            return undefined;
+        }
+        try {
+            const parsed: unknown = JSON.parse(value);
+            if (parsed && typeof parsed === 'object') {
+                const result: Record<string, string> = {};
+                Object.entries(parsed as Record<string, unknown>).forEach(([key, val]: [string, unknown]) => {
+                    if (typeof val === 'string') {
+                        result[key] = val;
+                    }
+                });
+                return result;
+            }
+        } catch {
+            return undefined;
+        }
+        return undefined;
+    }
+
+    private parseNumber(value: unknown, fallback: number): number {
+        const parsed: number | undefined = typeof value === 'number' && !Number.isNaN(value)
+            ? value
+            : typeof value === 'string' && value.length > 0 && !Number.isNaN(Number(value))
+                ? Number(value)
+                : undefined;
+        return typeof parsed === 'number' ? parsed : fallback;
+    }
+
     async close(): Promise<void> {
         try {
             if (this.db) {
@@ -191,59 +445,67 @@ export class HybridTM {
     // SEARCH METHODS
     // ============================
 
-    async concordanceSearch(textFragment: string, language: string, limit: number = 100): Promise<Map<string, XMLElement>[]> {
+    async concordanceSearch(textFragment: string, language: string, limit: number = 100, filters?: MetadataFilter): Promise<Map<string, XMLElement>[]> {
         // Enhanced concordance search: finds text fragments and returns all language variants for matching units
         try {
             const table: Table = await this.ensureTable();
 
-            const escapeLiteral = (value: string): string => value.replace(/'/g, "''");
+            const escapeLiteral = (value: string): string => value.replaceAll("'", "''");
             const escapedFragment: string = escapeLiteral(textFragment);
 
-            // Step 1: Retrieve entries that already satisfy the text fragment search in the database
             const whereFragment: string = 'language = ' + '\'' + language + '\'' + ' AND contains(pureText, ' + '\'' + escapedFragment + '\')';
-            const fragmentEntries: LangEntry[] = (await table
+            const fragmentEntries: LangEntry[] = this.hydrateEntries(await table
                 .query()
                 .where(whereFragment)
                 .limit(limit)
-                .toArray()) as LangEntry[];
+                .toArray());
 
-            if (fragmentEntries.length === 0) {
+            const filteredEntries: LangEntry[] = filters
+                ? fragmentEntries.filter((entry: LangEntry) => this.metadataMatches(entry.metadata, filters))
+                : fragmentEntries;
+
+            if (filteredEntries.length === 0) {
                 return [];
             }
 
-            // Step 2: Extract unique {fileId, unitId} combinations
-            const uniqueUnits = new Set<string>();
-            fragmentEntries.forEach((entry: LangEntry) => {
-                const unitKey: string = entry.fileId + ':' + entry.unitId;
-                uniqueUnits.add(unitKey);
+            const segmentDescriptors: Map<string, { fileId: string; unitId: string; segmentIndex: number; }> = new Map();
+            filteredEntries.forEach((entry: LangEntry) => {
+                const segmentIndex: number = typeof entry.segmentIndex === 'number' ? entry.segmentIndex : 0;
+                const descriptorKey: string = entry.fileId + '|' + entry.unitId + '|' + segmentIndex;
+                if (!segmentDescriptors.has(descriptorKey)) {
+                    segmentDescriptors.set(descriptorKey, {
+                        fileId: entry.fileId,
+                        unitId: entry.unitId,
+                        segmentIndex
+                    });
+                }
             });
 
-            // Step 3: For each unique unit, retrieve all language variants
             const result: Map<string, XMLElement>[] = [];
 
-            for (const unitKey of uniqueUnits) {
-                const [fileId, unitId]: string[] = unitKey.split(':');
-                const unitIdPrefix: string = fileId + ':' + unitId + ':';
-                const allVariants: LangEntry[] = (await table
+            for (const descriptor of segmentDescriptors.values()) {
+                const segmentPrefix: string = descriptor.fileId + ':' + descriptor.unitId + ':' + descriptor.segmentIndex + ':';
+                const sanitizedPrefix: string = escapeLiteral(segmentPrefix);
+                const segmentVariants: LangEntry[] = this.hydrateEntries(await table
                     .query()
-                    .where('starts_with(id, ' + '\'' + escapeLiteral(unitIdPrefix) + '\')')
-                    .toArray()) as LangEntry[];
+                    .where('starts_with(id, ' + '\'' + sanitizedPrefix + '\')')
+                    .toArray());
 
-                // Create a map of language -> XMLElement for this unit
+                if (segmentVariants.length === 0) {
+                    continue;
+                }
+
                 const languageMap: Map<string, XMLElement> = new Map<string, XMLElement>();
-
-                allVariants.forEach((variant: LangEntry) => {
+                for (const variant of segmentVariants) {
                     try {
-                        // Create XMLElement with the text content
                         const xmlElement: XMLElement = Utils.buildXMLElement(variant.element);
                         languageMap.set(variant.language, xmlElement);
                     } catch (parseErr: unknown) {
                         const errorMessage: string = parseErr instanceof Error ? parseErr.message : String(parseErr);
                         throw new Error('Failed to create XML element for ' + variant.id + ': ' + errorMessage);
                     }
-                });
+                }
 
-                // Only add to result if we have at least one language variant
                 if (languageMap.size > 0) {
                     result.push(languageMap);
                     if (result.length >= limit) {
@@ -258,23 +520,26 @@ export class HybridTM {
         }
     }
 
-    async semanticSearch(queryText: string, language: string, limit: number = 10): Promise<LangEntry[]> {
+    async semanticSearch(queryText: string, language: string, limit: number = 10, filters?: MetadataFilter): Promise<SearchResult[]> {
         try {
             const table: Table = await this.ensureTable();
             const queryEmbedding: number[] = await this.generateEmbedding(queryText);
-            const results: LangEntry[] = (await table
+            const results: LangEntry[] = this.hydrateEntries(await table
                 .vectorSearch(queryEmbedding)
                 .where('language = ' + '\'' + language + '\'')
                 .limit(limit)
-                .toArray()) as LangEntry[];
-            return results;
+                .toArray());
+            const filtered: LangEntry[] = filters
+                ? results.filter((entry: LangEntry) => this.metadataMatches(entry.metadata, filters))
+                : results;
+            return filtered.map((entry: LangEntry) => this.mapToSearchResult(entry));
         } catch (err: unknown) {
             console.error('Error performing semantic search:', err);
             throw err;
         }
     }
 
-    async semanticTranslationSearch(searchStr: string, srcLang: string, tgtLang: string, similarity: number, limit: number = 100): Promise<Array<Match>> {
+    async semanticTranslationSearch(searchStr: string, srcLang: string, tgtLang: string, similarity: number, limit: number = 100, filters?: TranslationSearchFilters): Promise<Array<Match>> {
         try {
             const table: Table = await this.ensureTable();
 
@@ -282,61 +547,238 @@ export class HybridTM {
             const queryEmbedding: number[] = await this.generateEmbedding(searchStr);
 
             // Get all entries for the source language
-            const sourceEntries: LangEntry[] = (await table
+            const sourceEntries: LangEntry[] = this.hydrateEntries(await table
                 .vectorSearch(queryEmbedding)
                 .where('language = ' + '\'' + srcLang + '\'')
-                .toArray()) as LangEntry[];
-            const matches: Array<Match> = [];
+                .toArray());
+            const rankedMatches: Array<{ match: Match; score: number; }> = [];
+            const sourceCriteria: MetadataFilter | undefined = filters?.source;
+            const targetCriteria: MetadataFilter | undefined = filters?.target ?? filters?.source;
 
             for (const sourceEntry of sourceEntries) {
                 if (!sourceEntry.pureText || !sourceEntry.vector) {
                     continue;
                 }
 
+                if (sourceCriteria && !this.metadataMatches(sourceEntry.metadata, sourceCriteria)) {
+                    continue;
+                }
+
                 // Linear mapping (more intuitive)
-                const l2Distance = sourceEntry._distance;
+                const rawDistance: unknown = sourceEntry._distance;
+                const l2Distance: number = typeof rawDistance === 'number'
+                    ? rawDistance
+                    : typeof rawDistance === 'string' && rawDistance.length > 0 && !Number.isNaN(Number(rawDistance))
+                        ? Number(rawDistance)
+                        : 0;
                 const semanticScore = Math.max(0, Math.round((2 - l2Distance) / 2 * 100));
                 const fuzzyScore: number = MatchQuality.similarity(searchStr, sourceEntry.pureText);
                 const hybridScore = Math.round((semanticScore + fuzzyScore) / 2);
 
                 // Only include matches that meet the minimum similarity threshold
                 if (hybridScore >= similarity) {
-                    // Find corresponding target language entry for the same unit
-                    const targetEntryId: string = sourceEntry.fileId + ':' + sourceEntry.unitId + ':' + tgtLang;
-                    const targetEntries: LangEntry[] = (await table
-                        .query()
-                        .where('id = ' + '\'' + targetEntryId + '\'')
-                        .toArray()) as LangEntry[];
-
-                    if (targetEntries.length > 0) {
-                        const targetEntry: LangEntry = targetEntries[0];
-                        try {
-                            // Create XMLElements from stored strings
-                            const sourceElement: XMLElement = Utils.buildXMLElement(sourceEntry.element);
-                            const targetElement: XMLElement = Utils.buildXMLElement(targetEntry.element);
-
-                            // Create Match object with semantic similarity quality score
-                            const match: Match = new Match(
-                                sourceElement,
-                                targetElement,
-                                this.name,
-                                semanticScore,
-                                fuzzyScore
-                            );
-                            matches.push(match);
-                        } catch (parseErr: unknown) {
-                            console.error('Error creating Match for semantic translation search: ' + (parseErr instanceof Error ? parseErr.message : String(parseErr)));
-                            // Skip this match if XML parsing fails
-                        }
+                    const targetEntry: LangEntry | null = await this.findTargetEntry(table, sourceEntry, tgtLang, targetCriteria);
+                    if (!targetEntry) {
+                        continue;
+                    }
+                    if (targetCriteria && !this.metadataMatches(targetEntry.metadata, targetCriteria)) {
+                        continue;
+                    }
+                    try {
+                        const sourceElement: XMLElement = Utils.buildXMLElement(sourceEntry.element);
+                        const targetElement: XMLElement = Utils.buildXMLElement(targetEntry.element);
+                        const match: Match = new Match(
+                            sourceElement,
+                            targetElement,
+                            this.name,
+                            semanticScore,
+                            fuzzyScore
+                        );
+                        const rankingScore: number = this.computeRankingScore(match.hybridScore(), sourceEntry, targetEntry);
+                        rankedMatches.push({ match, score: rankingScore });
+                    } catch (parseErr: unknown) {
+                        console.error('Error creating Match for semantic translation search: ' + (parseErr instanceof Error ? parseErr.message : String(parseErr)));
                     }
                 }
             }
-            // Sort matches by quality (highest hybrid similarity first) and apply limit
-            matches.sort((a, b) => b.hybridScore() - a.hybridScore());
-            return matches.slice(0, limit);
+            rankedMatches.sort((a, b) => b.score - a.score);
+            return rankedMatches.slice(0, limit).map((item) => item.match);
         } catch (err: unknown) {
             console.error('Error performing semantic search with quality:', err);
             return [];
+        }
+    }
+
+    private async findTargetEntry(table: Table, sourceEntry: LangEntry, tgtLang: string, filters?: MetadataFilter): Promise<LangEntry | null> {
+        if (!sourceEntry.fileId || !sourceEntry.unitId) {
+            return null;
+        }
+
+        const exactId: string = this.buildEntryId(sourceEntry.fileId, sourceEntry.unitId, sourceEntry.segmentIndex, tgtLang);
+        const exactMatches: LangEntry[] = this.hydrateEntries(await table
+            .query()
+            .where('id = ' + '\'' + Utils.replaceQuotes(exactId) + '\'')
+            .toArray());
+        const exactMatch: LangEntry | undefined = this.selectPreferredCandidate(exactMatches, sourceEntry.segmentIndex, filters);
+        if (exactMatch) {
+            return exactMatch;
+        }
+
+        const unitPrefix: string = sourceEntry.fileId + ':' + sourceEntry.unitId + ':';
+        const sanitizedPrefix: string = Utils.replaceQuotes(unitPrefix);
+        const sanitizedLang: string = Utils.replaceQuotes(tgtLang);
+        const unitMatches: LangEntry[] = this.hydrateEntries(await table
+            .query()
+            .where('starts_with(id, ' + '\'' + sanitizedPrefix + '\') AND language = ' + '\'' + sanitizedLang + '\'')
+            .limit(50)
+            .toArray());
+
+        if (unitMatches.length === 0) {
+            return null;
+        }
+
+        const preferred: LangEntry | undefined = this.selectPreferredCandidate(unitMatches, sourceEntry.segmentIndex, filters);
+        return preferred ?? null;
+    }
+
+    private computeRankingScore(baseScore: number, sourceEntry: LangEntry, targetEntry: LangEntry): number {
+        let score: number = baseScore;
+
+        if (sourceEntry.segmentIndex > 0 && targetEntry.segmentIndex > 0) {
+            score += sourceEntry.segmentIndex === targetEntry.segmentIndex ? 10 : 5;
+        }
+
+        const quality: number | undefined = targetEntry.metadata && typeof targetEntry.metadata.quality === 'number'
+            ? targetEntry.metadata.quality
+            : undefined;
+        if (quality !== undefined && !Number.isNaN(quality)) {
+            score += Math.min(Math.max(quality, 0), 100) / 20;
+        }
+
+        const recencyTimestamp: number | undefined = this.parseMetadataTimestamp(
+            targetEntry.metadata?.changeDate || targetEntry.metadata?.creationDate
+        );
+        if (recencyTimestamp !== undefined) {
+            const ageDays: number = (Date.now() - recencyTimestamp) / 86400000;
+            if (Number.isFinite(ageDays) && ageDays >= 0) {
+                const normalized: number = Math.max(0, 1 - Math.min(ageDays, 365) / 365);
+                score += normalized * 5;
+            }
+        }
+
+        if (targetEntry.metadata?.state === 'final') {
+            score += 3;
+        } else if (targetEntry.metadata?.state === 'reviewed') {
+            score += 2;
+        } else if (targetEntry.metadata?.state === 'translated') {
+            score += 1;
+        }
+
+        return score;
+    }
+
+    private parseMetadataTimestamp(value: string | undefined): number | undefined {
+        if (!value) {
+            return undefined;
+        }
+        const parsed: number = Date.parse(value);
+        return Number.isNaN(parsed) ? undefined : parsed;
+    }
+
+    private selectPreferredCandidate(entries: LangEntry[], desiredSegmentIndex: number, filters?: MetadataFilter): LangEntry | undefined {
+        if (!entries || entries.length === 0) {
+            return undefined;
+        }
+        const filtered: LangEntry[] = filters
+            ? entries.filter((entry: LangEntry) => this.metadataMatches(entry.metadata, filters))
+            : entries.slice();
+        if (filtered.length === 0) {
+            return undefined;
+        }
+        if (desiredSegmentIndex > 0) {
+            const exact: LangEntry | undefined = filtered.find((entry: LangEntry) => entry.segmentIndex === desiredSegmentIndex);
+            if (exact) {
+                return exact;
+            }
+        }
+        const segmentEntry: LangEntry | undefined = filtered.find((entry: LangEntry) => entry.segmentIndex > 0);
+        if (segmentEntry) {
+            return segmentEntry;
+        }
+        return filtered[0];
+    }
+
+    private metadataMatches(metadata: EntryMetadata | undefined, filter?: MetadataFilter): boolean {
+        if (!filter) {
+            return true;
+        }
+        if (!metadata) {
+            return false;
+        }
+
+        if (filter.states && filter.states.length > 0) {
+            if (!metadata.state || !filter.states.includes(metadata.state)) {
+                return false;
+            }
+        }
+
+        if (filter.minState) {
+            const metadataRank: number = this.getStateRank(metadata.state);
+            if (metadataRank === 0 || metadataRank < this.getStateRank(filter.minState)) {
+                return false;
+            }
+        }
+
+        if (typeof filter.minQuality === 'number') {
+            if (typeof metadata.quality !== 'number' || metadata.quality < filter.minQuality) {
+                return false;
+            }
+        }
+
+        if (filter.contextIncludes && filter.contextIncludes.length > 0) {
+            const contextValue: string = (metadata.context || '').toLowerCase();
+            const matchesAll: boolean = filter.contextIncludes.every((needle: string) => contextValue.includes(needle.toLowerCase()));
+            if (!matchesAll) {
+                return false;
+            }
+        }
+
+        if (filter.requiredProperties) {
+            if (!metadata.properties) {
+                return false;
+            }
+            for (const [key, expected] of Object.entries(filter.requiredProperties)) {
+                if (metadata.properties[key] !== expected) {
+                    return false;
+                }
+            }
+        }
+
+        if (filter.provider) {
+            const provider: string | undefined = metadata.segment?.provider;
+            if (!provider || provider !== filter.provider) {
+                return false;
+            }
+        }
+
+        return true;
+    }
+
+    private getStateRank(value: TranslationState | undefined): number {
+        if (!value) {
+            return 0;
+        }
+        switch (value) {
+            case 'initial':
+                return 1;
+            case 'translated':
+                return 2;
+            case 'reviewed':
+                return 3;
+            case 'final':
+                return 4;
+            default:
+                return 0;
         }
     }
 
@@ -344,16 +786,29 @@ export class HybridTM {
     // DATA MANAGEMENT METHODS
     // ============================
 
-    async storeLangEntry(fileId: string, original: string, unitId: string, lang: string, pureText: string, element: XMLElement, embeddings?: number[]): Promise<void> {
+    async storeLangEntry(
+        fileId: string,
+        original: string,
+        unitId: string,
+        lang: string,
+        pureText: string,
+        element: XMLElement,
+        embeddings?: number[],
+        segmentIndex: number = 0,
+        segmentCount: number = 1,
+        metadata?: EntryMetadata
+    ): Promise<void> {
         try {
             const table: Table = await this.ensureTable();
             const sanitizedFileId: string = Utils.replaceQuotes(fileId);
             const sanitizedUnitId: string = Utils.replaceQuotes(unitId);
-            const entryId: string = sanitizedFileId + ':' + sanitizedUnitId + ':' + lang;
-            const existingEntries: LangEntry[] = (await table
+            const safeSegmentIndex: number = typeof segmentIndex === 'number' ? segmentIndex : 0;
+            const safeSegmentCount: number = typeof segmentCount === 'number' && segmentCount > 0 ? segmentCount : 1;
+            const entryId: string = this.buildEntryId(sanitizedFileId, sanitizedUnitId, safeSegmentIndex, lang);
+            const existingEntries: LangEntry[] = this.hydrateEntries(await table
                 .query()
                 .where('id = ' + '\'' + entryId + '\'')
-                .toArray()) as LangEntry[];
+                .toArray());
 
             if (existingEntries.length > 0) {
                 const existingEntry: LangEntry = existingEntries[0];
@@ -384,7 +839,10 @@ export class HybridTM {
                 fileId: sanitizedFileId,
                 original: original,
                 unitId: sanitizedUnitId,
-                vector: vectorEmbeddings
+                vector: vectorEmbeddings,
+                segmentIndex: safeSegmentIndex,
+                segmentCount: safeSegmentCount,
+                metadata: metadata ?? {}
             };
 
             // Delete existing entry first (LanceDB upsert approach)
@@ -394,7 +852,7 @@ export class HybridTM {
                 // Entry might not exist, which is fine
             }
 
-            await table.add([entry]);
+            await table.add([this.flattenEntry(entry)]);
         } catch (err: unknown) {
             console.error('Error storing language entry:', err);
             throw err;
@@ -414,7 +872,9 @@ export class HybridTM {
                 const sanitizedFileId: string = Utils.replaceQuotes(entry.fileId);
                 const sanitizedUnitId: string = Utils.replaceQuotes(entry.unitId);
                 const vectorEmbeddings: number[] = await this.generateEmbedding(entry.pureText);
-                const entryId: string = sanitizedFileId + ':' + sanitizedUnitId + ':' + entry.language;
+                const safeSegmentIndex: number = typeof entry.segmentIndex === 'number' ? entry.segmentIndex : 0;
+                const safeSegmentCount: number = typeof entry.segmentCount === 'number' && entry.segmentCount > 0 ? entry.segmentCount : 1;
+                const entryId: string = this.buildEntryId(sanitizedFileId, sanitizedUnitId, safeSegmentIndex, entry.language);
 
                 const langEntry: LangEntry = {
                     id: entryId,
@@ -424,7 +884,10 @@ export class HybridTM {
                     fileId: sanitizedFileId,
                     original: entry.original,
                     unitId: sanitizedUnitId,
-                    vector: vectorEmbeddings
+                    vector: vectorEmbeddings,
+                    segmentIndex: safeSegmentIndex,
+                    segmentCount: safeSegmentCount,
+                    metadata: entry.metadata ?? {}
                 };
 
                 langEntries.push(langEntry);
@@ -443,15 +906,15 @@ export class HybridTM {
             }
 
             // Bulk insert all entries at once
-            await table.add(langEntries);
+            const flattenedEntries: Record<string, unknown>[] = langEntries.map((item: LangEntry) => this.flattenEntry(item));
+            await table.add(flattenedEntries);
         } catch (err: unknown) {
             console.error('Error storing batch entries:', err);
             throw err;
         }
     }
 
-    // Method to check if an entry exists
-    async entryExists(fileId: string, unitId: string, lang: string): Promise<boolean> {
+    async entryExists(fileId: string, unitId: string, lang: string, segmentIndex: number = 0): Promise<boolean> {
         try {
             if (!this.table) {
                 await this.initializeDatabase();
@@ -461,11 +924,13 @@ export class HybridTM {
                 throw new Error('Failed to initialize database table');
             }
 
-            const entryId: string = Utils.replaceQuotes(fileId) + ':' + Utils.replaceQuotes(unitId) + ':' + lang;
-            const existingEntries: LangEntry[] = (await this.table
+            const sanitizedFileId: string = Utils.replaceQuotes(fileId);
+            const sanitizedUnitId: string = Utils.replaceQuotes(unitId);
+            const entryId: string = this.buildEntryId(sanitizedFileId, sanitizedUnitId, segmentIndex, lang);
+            const existingEntries: LangEntry[] = this.hydrateEntries(await this.table
                 .query()
                 .where('id = ' + '\'' + entryId + '\'')
-                .toArray()) as LangEntry[];
+                .toArray());
 
             return existingEntries.length > 0;
         } catch (err: unknown) {
@@ -474,8 +939,7 @@ export class HybridTM {
         }
     }
 
-    // Method to get a specific entry
-    async getLangEntry(fileId: string, unitId: string, lang: string): Promise<LangEntry | null> {
+    async getLangEntry(fileId: string, unitId: string, lang: string, segmentIndex: number = 0): Promise<LangEntry | null> {
         try {
             if (!this.table) {
                 await this.initializeDatabase();
@@ -485,11 +949,13 @@ export class HybridTM {
                 throw new Error('Failed to initialize database table');
             }
 
-            const entryId: string = Utils.replaceQuotes(fileId) + ':' + Utils.replaceQuotes(unitId) + ':' + lang;
-            const existingEntries: LangEntry[] = (await this.table
+            const sanitizedFileId: string = Utils.replaceQuotes(fileId);
+            const sanitizedUnitId: string = Utils.replaceQuotes(unitId);
+            const entryId: string = this.buildEntryId(sanitizedFileId, sanitizedUnitId, segmentIndex, lang);
+            const existingEntries: LangEntry[] = this.hydrateEntries(await this.table
                 .query()
                 .where('id = ' + '\'' + entryId + '\'')
-                .toArray()) as LangEntry[];
+                .toArray());
 
             return existingEntries.length > 0 ? existingEntries[0] : null;
         } catch (err: unknown) {
@@ -498,7 +964,7 @@ export class HybridTM {
         }
     }
 
-    async deleteLangEntry(fileId: string, unitId: string, lang: string): Promise<boolean> {
+    async deleteLangEntry(fileId: string, unitId: string, lang: string, segmentIndex: number = 0): Promise<boolean> {
         try {
             if (!this.table) {
                 await this.initializeDatabase();
@@ -507,10 +973,12 @@ export class HybridTM {
                 throw new Error('Failed to initialize database table');
             }
 
-            const entryId: string = Utils.replaceQuotes(fileId) + ':' + Utils.replaceQuotes(unitId) + ':' + lang;
+            const sanitizedFileId: string = Utils.replaceQuotes(fileId);
+            const sanitizedUnitId: string = Utils.replaceQuotes(unitId);
+            const entryId: string = this.buildEntryId(sanitizedFileId, sanitizedUnitId, segmentIndex, lang);
 
             // Check if entry exists first
-            const exists: boolean = await this.entryExists(fileId, unitId, lang);
+            const exists: boolean = await this.entryExists(fileId, unitId, lang, segmentIndex);
             if (!exists) {
                 return false;
             }
@@ -528,9 +996,10 @@ export class HybridTM {
     // DATA IMPORT METHODS
     // ============================
 
-    async importXLIFF(filePath: string): Promise<void> {
+    async importXLIFF(filePath: string, options?: ImportOptions): Promise<void> {
         // Phase 1: Parse XLIFF and write to temporary JSONL file
-        const reader: XLIFFReader = new XLIFFReader(filePath);
+        const resolvedOptions: ImportOptions = resolveImportOptions(options);
+        const reader: XLIFFReader = new XLIFFReader(filePath, resolvedOptions);
         await reader.parse();
 
         // Phase 2: Batch import from JSONL file (asynchronous)
@@ -538,9 +1007,10 @@ export class HybridTM {
         await importer.import();
     }
 
-    async importTMX(filePath: string): Promise<void> {
+    async importTMX(filePath: string, options?: ImportOptions): Promise<void> {
         // Phase 1: Parse TMX and write to temporary JSONL file
-        const reader: TMXReader = new TMXReader(filePath);
+        const resolvedOptions: ImportOptions = resolveImportOptions(options);
+        const reader: TMXReader = new TMXReader(filePath, resolvedOptions);
         await reader.parse();
 
         // Phase 2: Batch import from JSONL file (asynchronous)

@@ -10,7 +10,18 @@
  *     Maxprograms - initial API and implementation
  *******************************************************************************/
 
-export class Constants {
-    public static readonly VERSION: string = "1.0.0";
-    public static readonly BUILD: string = "20251208_1601";
+import { TranslationState } from './importOptions.js';
+
+export interface MetadataFilter {
+    states?: TranslationState[];
+    minState?: TranslationState;
+    minQuality?: number;
+    contextIncludes?: string[];
+    requiredProperties?: Record<string, string>;
+    provider?: string;
+}
+
+export interface TranslationSearchFilters {
+    source?: MetadataFilter;
+    target?: MetadataFilter;
 }

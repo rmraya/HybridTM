@@ -11,6 +11,7 @@
  *******************************************************************************/
 
 import { XMLElement } from "typesxml";
+import { EntryMetadata } from './langEntry.js';
 
 
 export interface PendingEntry {
@@ -20,4 +21,7 @@ export interface PendingEntry {
     language: string;
     pureText: string;
     element: XMLElement;
+    segmentIndex: number;
+    segmentCount: number;
+    metadata: EntryMetadata;
 }

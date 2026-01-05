@@ -10,12 +10,12 @@
  *     Maxprograms - initial API and implementation
  *******************************************************************************/
 
-import { ContentHandler, DOMBuilder, SAXParser, TextNode, XMLElement, XMLNode, XMLDocument } from "typesxml";
+import { ContentHandler, DOMBuilder, SAXParser, TextNode, XMLDocument, XMLElement, XMLNode } from "typesxml";
 
 export class Utils {
 
     static replaceQuotes(value: string): string {
-        return value.replace(/'/g, "''");
+        return value.replaceAll("'", "''");
     }
 
     static getPureText(element: XMLElement): string {
@@ -27,7 +27,7 @@ export class Utils {
             }
             if (node instanceof XMLElement) {
                 const child: XMLElement = node;
-                if ("pc" === child.getName() || "mrk" === child.getName()|| "hi" === child.getName()) {
+                if ("pc" === child.getName() || "mrk" === child.getName() || "hi" === child.getName()) {
                     text += this.getPureText(child);
                 }
                 // purposedly ignore "cp" for now

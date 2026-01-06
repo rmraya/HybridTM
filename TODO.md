@@ -5,3 +5,4 @@
 - Extend the Match class (and semanticTranslationSearch output) to include source and target metadata so translation searches return the same metadata details as semanticSearch.
 - Design a pluggable glossary import pipeline starting with TBX and GlossML support, aligned with the existing XLIFF/TMX reader → JSONL → BatchImporter flow.
 - Provide a CLI that can run imports (XLIFF/TMX/glossaries) and execute searches (concordance, semantic, translation) against a HybridTM instance for scripting and automation.
+- Import SDLTM files from Trados Studio by converting them to TMX via the `sdltm` library (https://github.com/rmraya/sdltm) so existing SDLTM assets can enter the standard HybridTM pipelines.

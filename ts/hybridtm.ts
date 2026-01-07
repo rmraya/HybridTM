@@ -13,6 +13,10 @@
 import { connect, Connection, Table } from '@lancedb/lancedb';
 import { FeatureExtractionPipeline, pipeline, Tensor } from '@xenova/transformers';
 import { Field, FixedSizeList, Float32, Int32, Schema, Utf8 } from 'apache-arrow';
+import { unlinkSync } from 'node:fs';
+import { tmpdir } from "node:os";
+import { join } from 'node:path';
+import { TMReader } from 'sdltm';
 import { XMLElement } from 'typesxml';
 import { BatchImporter } from './batchImporter.js';
 import { ImportOptions, resolveImportOptions, TranslationState } from './importOptions.js';
@@ -309,8 +313,9 @@ export class HybridTM {
             return undefined;
         };
         const stateValue: string | undefined = str(row.metadataState);
-        if (stateValue === 'initial' || stateValue === 'translated' || stateValue === 'reviewed' || stateValue === 'final') {
-            metadata.state = stateValue;
+        const validStatuses: string[] = ['initial', 'translated', 'reviewed', 'final'];
+        if (stateValue && validStatuses.includes(stateValue)) {
+            metadata.state = stateValue as TranslationState;
         }
         const subStateValue: string | undefined = str(row.metadataSubState);
         if (subStateValue) {
@@ -1016,5 +1021,33 @@ export class HybridTM {
         // Phase 2: Batch import from JSONL file (asynchronous)
         const importer: BatchImporter = new BatchImporter(this, reader.getTempFilePath(), reader.getEntryCount());
         await importer.import();
+    }
+
+    async importSDLTM(filePath: string, options?: ImportOptions): Promise<void> {
+        const tempDir = tmpdir();
+        const tempFileName = 'tmx_' + Date.now() + '_' + Math.random().toString(36).substring(7) + '.tmx';
+        const tempFilePath: string = join(tempDir, tempFileName);
+        const packageJson: any = await import('../package.json', { assert: { type: 'json' } });
+        const productName: string = packageJson.default.productName;
+        const version: string = packageJson.default.version;
+
+        // Wrap callback-based TMReader in a Promise
+        await new Promise<void>((resolve, reject) => {
+            new TMReader(filePath, tempFilePath, { 'productName': productName, 'version': version }, async (data: any) => {
+                try {
+                    if (data.status === 'Success') {
+                        await this.importTMX(tempFilePath, options);
+                        unlinkSync(tempFilePath);
+                        resolve();
+                    } else if (data.status === 'Error') {
+                        reject(new Error(data.reason));
+                    } else {
+                        reject(new Error('Unknown status from TMReader: ' + data.status));
+                    }
+                } catch (err) {
+                    reject(err);
+                }
+            });
+        });
     }
 }

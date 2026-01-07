@@ -24,6 +24,14 @@ await tm.importTMX(path.resolve('translations/legacy.tmx'));
 
 TMX import preserves every `<tu>`/`<tuv>` pair, computes canonical IDs (`fileId:unitId:segmentIndex:lang`), and converts notes, creation/change metadata, and custom fields into the HybridTM metadata map.
 
+## Importing SDLTM from Trados Studio
+
+```typescript
+await tm.importSDLTM(path.resolve('translations/legacy.sdltm'));
+```
+
+SDLTM files from Trados Studio are automatically converted to TMX format using the `sdltm` library, then imported through the standard TMX pipeline. The temporary TMX file is cleaned up automatically after import.
+
 ## Import options
 
 Use `ImportOptions` to tune the ingestion pass. All fields are optional; unspecified values fall back to the defaults listed below.

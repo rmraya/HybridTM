@@ -4,7 +4,7 @@ HybridTM is a TypeScript translation memory engine that stores bilingual content
 
 ## Highlights
 
-- Imports XLIFF 2.x and TMX 1.4b files, preserving metadata, notes, and custom properties
+- Imports XLIFF 2.x, TMX 1.4b, and SDLTM files, preserving metadata, notes, and custom properties
 - Generates semantic vectors with any Xenova-compatible text model (default: `HybridTM.QUALITY_MODEL`, LaBSE)
 - Provides `semanticTranslationSearch`, `semanticSearch`, and `concordanceSearch` APIs with metadata-aware filtering
 - Streams data into LanceDB through a JSONL-based batch importer to keep memory usage predictable
@@ -62,11 +62,12 @@ main().catch((error) => {
 });
 ```
 
-Import XLIFF/TMX content at any time:
+Import XLIFF/TMX/SDLTM content at any time:
 
 ```typescript
 await tm.importXLIFF('./translations/project.xlf', { minState: 'reviewed' });
 await tm.importTMX('./translations/legacy.tmx');
+await tm.importSDLTM('./translations/legacy.sdltm');
 ```
 
 `semanticTranslationSearch` automatically pairs every source hit with its matching target segment (same `fileId`, `unitId`, and `segmentIndex`), making the output ready for CAT integrations.

@@ -2,7 +2,7 @@
     "name": "hybridtm",
     "productName": "HybridTM",
     "version": "0.2.0",
-    "description": "HybridTM is a Translation Memory (TM) engine that supports vector-based matching.",
+    "description": "HybridTM is a Translation Memory (TM) engine that combines semantic embeddings with fuzzy string matching.",
     "main": "dist/index.js",
     "type": "module",
     "types": "dist/index.d.ts",

@@ -1030,24 +1030,12 @@ export class HybridTM {
         const packageJson: any = await import('../package.json', { assert: { type: 'json' } });
         const productName: string = packageJson.default.productName;
         const version: string = packageJson.default.version;
-
-        // Wrap callback-based TMReader in a Promise
-        await new Promise<void>((resolve, reject) => {
-            new TMReader(filePath, tempFilePath, { 'productName': productName, 'version': version }, async (data: any) => {
-                try {
-                    if (data.status === 'Success') {
-                        await this.importTMX(tempFilePath, options);
-                        unlinkSync(tempFilePath);
-                        resolve();
-                    } else if (data.status === 'Error') {
-                        reject(new Error(data.reason));
-                    } else {
-                        reject(new Error('Unknown status from TMReader: ' + data.status));
-                    }
-                } catch (err) {
-                    reject(err);
-                }
-            });
-        });
+        const tmReader: TMReader = new TMReader({ 'productName': productName, 'version': version });
+        const data = await tmReader.convert(filePath, tempFilePath);
+        if (data.status !== 'Success') {
+            throw new Error('SDL TM conversion failed for file ' + filePath);
+        }
+        await this.importTMX(tempFilePath, options);
+        unlinkSync(tempFilePath);
     }
 }
